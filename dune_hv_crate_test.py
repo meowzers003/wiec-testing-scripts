@@ -83,7 +83,7 @@ class LDOmeasure:
             self.emergency_shutoff()		
             raise
 
-	
+        self.emergency_shutoff() #just in case not already off  	
 	
         if (self.fan_test_result and self.heat_test_result and self.hv_test_result):
             self.ws.cell(row=self.row, column=1, value=self.test_name).style = "pass"
@@ -100,7 +100,8 @@ class LDOmeasure:
 
         with open(self.json_output_file, 'w', encoding='utf-8') as f:
             json.dump(self.datastore, f, ensure_ascii=False, indent=4, default=str)
-        
+            
+ 	     
         print(f"{self.prefix} --> Test complete")
         print(f"{self.prefix} --> Test result: {self.datastore['overall']}")
         self.beep_sequence()
@@ -217,6 +218,15 @@ class LDOmeasure:
         fanread_voltage = self.r1.get_voltage("fanread")
         fanread_current = self.r1.get_current("fanread")
         fan_read_signal = self.k.measure_fan()
+        
+        #take all data again for good measure
+        fan_voltage = self.r0.get_voltage("fan")
+        fan_current = self.r0.get_current("fan")
+        fanread_voltage = self.r1.get_voltage("fanread")
+        fanread_current = self.r1.get_current("fanread")
+        fan_read_signal = self.k.measure_fan()
+        
+                
         self.r0.power("OFF", "fan")
         self.r1.power("OFF", "fanread")
         print(f"{self.prefix} --> Fans turned off")
@@ -277,6 +287,7 @@ class LDOmeasure:
         #Then prepare RTD and switch relay to connect power
         self.k.initialize_rtd()
         temp1 = self.k.measure_rtd()
+        #temp1 = self.k.measure_rtd() #measure again for good measure
         self.r0.power("ON", "heat_supply")
         self.r0.power("ON", "heat_switch")
         print(f"{self.prefix} --> Heat turned on, waiting {self.json_data['heat_wait']} seconds for the sensors to heat up...")
@@ -286,6 +297,7 @@ class LDOmeasure:
         switch_voltage = self.r0.get_voltage("heat_switch")
         switch_current = self.r0.get_current("heat_switch")
         temp2 = self.k.measure_rtd()
+        #temp2 = self.k.measure_rtd() #measure again for good measure
         temp_rise = []
         temp_rise.append(temp2[1] - temp1[1])
         temp_rise.append(temp2[2] - temp1[2])
@@ -380,16 +392,23 @@ class LDOmeasure:
                 hv_results[i]["pos_open_R"] = 0
             try:
                 hv_results[i]["pos_term_R"] = float(hv_results[i]["pos_term_V"])/float(hv_results[i]["pos_term_I"])
-            except:
+            except Exception as e:
                 hv_results[i]["pos_term_R"] = 0
+                print(e)
+                print(hv_results[i]["pos_term_V"])
+                print(hv_results[i]["pos_term_I"])               
             try:
                 hv_results[i]["neg_open_R"] = float(hv_results[i]["neg_open_V"])/float(hv_results[i]["neg_open_I"])
             except:
                 hv_results[i]["neg_open_R"] = 0
             try:
                 hv_results[i]["neg_term_R"] = float(hv_results[i]["neg_term_V"])/float(hv_results[i]["neg_term_I"])
-            except:
+            except Exception as e:            
                 hv_results[i]["neg_term_R"] = 0
+                print(e)  
+                print(hv_results[i]["neg_term_V"])
+                print(hv_results[i]["neg_term_I"])                
+                
 
             print(f"{self.prefix} --> Channel {i} HV results are {hv_results[i]}")
 
@@ -637,7 +656,7 @@ class LDOmeasure:
             while not ramp_done:
                 try:
             	    self.k.set_relay(relay_setting, 0)
-            	    self.c.turn_on(pos_chs)
+            	    self.c.turn_on(neg_chs)
             	    ramp_done = True
             	    print(f"{self.prefix} --> HV reached max value, waiting {self.json_data['hv_termination_wait']} seconds to stabilize...")
             	    time.sleep(self.json_data['hv_termination_wait'])
@@ -694,8 +713,10 @@ class LDOmeasure:
                 #hv_results[i]["neg_term_V"] = self.c.get_voltage(neg_ch)
                 #hv_results[i]["neg_term_I"] = self.c.get_current(neg_ch)
                 print("Measuring 10k terminated voltage and current...")
-                voltage = self.c.get_voltage(neg_ch, print_meas=True)
-                current = self.c.get_current(neg_ch, print_meas=True)
+                voltage = self.c.get_voltage(neg_ch)#, print_meas=True)
+                voltage = self.c.get_voltage(neg_ch)
+                current = self.c.get_current(neg_ch)#, print_meas=True)
+                current = self.c.get_current(neg_ch)
                 #print(f"Ch {i} voltage: {voltage}, current {current}, resistance {voltage/current}")
                 hv_results[i]["neg_term_V"] = voltage
                 hv_results[i]["neg_term_I"] = current

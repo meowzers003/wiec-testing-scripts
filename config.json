@@ -103,15 +103,16 @@
 "keysight970a_fan_NPLcycles": 10,
 "keysight970a_fan_autozero": "ON",
 "keysight970a_fan_autoimpedance": "ON",
-"keysight970a_fan_delay": 1.0,
+"keysight970a_fan_freqrange_lower": 200,
+"keysight970a_fan_delay": 4.0,
 
 "rigol832a0": "TCPIP::169.254.4.20::INSTR",
 "rigol832a1": "TCPIP::169.254.4.21::INSTR",
 
 "rigol832a_fan_ch": 1,
 "rigol832a_fan_voltage": 24.0,
-"rigol832a_fan_current": 1.2,
-"rigol832a_fan_overcurrent": 1.4,
+"rigol832a_fan_current": 2.0,
+"rigol832a_fan_overcurrent": 2.2,
 "rigol832a_fan_overcurrent_en": "ON",
 
 "rigol832a_heater_supply_ch": 2,
@@ -128,13 +129,13 @@
 
 "rigol832a_hvpullup_ch": 4,
 "rigol832a_hvpullup_voltage": 24.0,
-"rigol832a_hvpullup_current": 1.0,
+"rigol832a_hvpullup_current": 2.0,
 "rigol832a_hvpullup_overcurrent": 3.1,
 "rigol832a_hvpullup_overcurrent_en": "ON",
 
 "rigol832a_hvpullup2_ch": 5,
 "rigol832a_hvpullup2_voltage": 24.0,
-"rigol832a_hvpullup2_current": 1.0,
+"rigol832a_hvpullup2_current": 2.0,
 "rigol832a_hvpullup2_overcurrent": 3.1,
 "rigol832a_hvpullup2_overcurrent_en": "ON",
 
