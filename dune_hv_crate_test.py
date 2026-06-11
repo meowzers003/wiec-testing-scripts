@@ -264,6 +264,38 @@ class LDOmeasure:
         self.datastore['fanread_voltage'] = fanread_voltage
         self.datastore['fanread_current'] = fanread_current
         self.datastore['fan_read_signal'] = fan_read_signal
+		# return fan_read_signal, fanread_voltage, fanread_current # return these for voltage sweep fan func plot
+
+	def fan_test_sweep(self):
+		#### all units for voltage in Volts here
+		# ---- data storage lists, worry about graphing later 
+		# dictionaries where key = specific member (aka fan), value = y-axis variable (osc freq)
+		num_fans = 6 # find the embedded way of getting this value
+		fan_signals = {i: [] for i in range(1, num_fans + 1)} 
+		prog_voltage = [] # program defined input fan voltage 
+		read_voltage = [] # measured input fan voltage 
+		
+		# ----- start sweep test -----
+		# initialize to min fan voltage value 
+		self.json_data["rigol832a_fan_voltage"] = self.json_data["rigol832a_fan_voltage_min"]
+		prog_voltage.append(self.json_data["rigol832a_fan_voltage_min"])
+		
+		# loop until max value is reached 
+		while ( self.json_data["rigol832a_fan_voltage"] < self.json_data["rigol832a_fan_voltage_max"] ) :
+			# call fan_test 
+			self.fan_test()
+			# extract info
+			fan_read_signal = self.datastore['fan_read_signal']
+			fan_voltage = self.datastore['fan_voltage']
+			# parse info into collections
+			read_voltage.append(fan_voltage)
+			for fan in range(1, num_fans + 1):
+				fan_signals[fan] = fan_signals[fan].append( fan_read_signal.get(fan,-1) )
+			# update voltage value to next step
+			self.json_data["rigol832a_fan_voltage"] += self.json_data["rigol832a_fan_voltage_step"]
+			
+	
+			
 
     def heater_test(self):
         #Heater test
