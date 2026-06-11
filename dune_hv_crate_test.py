@@ -267,6 +267,8 @@ class LDOmeasure:
         self.datastore['fan_read_signal'] = fan_read_signal
 		# return fan_read_signal, fanread_voltage, fanread_current # return these for voltage sweep fan func plot
 
+
+		
 	def fan_test_sweep(self):
 		#### all units for voltage in Volts here
 		# ---- data storage lists, worry about graphing later 
