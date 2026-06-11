@@ -265,6 +265,7 @@ class LDOmeasure:
         self.datastore['fanread_voltage'] = fanread_voltage
         self.datastore['fanread_current'] = fanread_current
         self.datastore['fan_read_signal'] = fan_read_signal
+		return None
 		# return fan_read_signal, fanread_voltage, fanread_current # return these for voltage sweep fan func plot
 
 
