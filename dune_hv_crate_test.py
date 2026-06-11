@@ -944,7 +944,7 @@ class LDOmeasure:
         self.k.beep()
 
 	
-	def fan_test_sweep(self):
+    def fan_test_sweep(self):
 		#### all units for voltage in Volts here
 		# ---- data storage lists, worry about graphing later 
 		# dictionaries where key = specific member (aka fan), value = y-axis variable (osc freq)
