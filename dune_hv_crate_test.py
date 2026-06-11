@@ -270,7 +270,7 @@ class LDOmeasure:
 		#### all units for voltage in Volts here
 		# ---- data storage lists, worry about graphing later 
 		# dictionaries where key = specific member (aka fan), value = y-axis variable (osc freq)
-		num_fans = 6 # find the embedded way of getting this value
+		num_fans = self.json_data["keysight970a_fan_num"] 
 		fan_signals = {i: [] for i in range(1, num_fans + 1)} 
 		prog_voltage = [] # program defined input fan voltage 
 		read_voltage = [] # measured input fan voltage 
