@@ -211,6 +211,7 @@ class LDOmeasure:
         self.k.initialize_fan()
         self.r0.power("ON", "fan")
         self.r1.power("ON", "fanread")
+		print(f"{self.prefix} --> Fans Tested at Nominal Voltage Specified ..... {self.json_data['rigol832a_fan_voltage']} ") # print out the "nominal voltage" aka the initial user specified fans voltage here, as it gets updated to max voltage after sweep test and becomes lost data
         print(f"{self.prefix} --> Fans turned on, waiting {self.json_data['fan_wait']} seconds for the fans to reach steady state...")
         time.sleep(self.json_data['fan_wait'])
         fan_voltage = self.r0.get_voltage("fan")
