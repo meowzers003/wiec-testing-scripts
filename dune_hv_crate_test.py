@@ -272,18 +272,18 @@ class LDOmeasure:
 		#### all units for voltage in Volts here
 		# ---- data storage lists, worry about graphing later 
 		# dictionaries where key = specific member (aka fan), value = y-axis variable (osc freq)
-		num_fans = self.json_data["keysight970a_fan_num"] 
+		num_fans = self.json_data['keysight970a_fan_num'] 
 		fan_signals = {i: [] for i in range(1, num_fans + 1)} 
 		prog_voltage = [] # program defined input fan voltage 
 		read_voltage = [] # measured input fan voltage 
 		
 		# ----- start sweep test -----
 		# initialize to min fan voltage value 
-		self.json_data["rigol832a_fan_voltage"] = self.json_data["rigol832a_fan_voltage_min"]
-		prog_voltage.append(self.json_data["rigol832a_fan_voltage_min"])
+		self.json_data['rigol832a_fan_voltage'] = self.json_data['rigol832a_fan_voltage_min']
+		prog_voltage.append(self.json_data['rigol832a_fan_voltage_min'])
 		
 		# loop until max value is reached 
-		while ( self.json_data["rigol832a_fan_voltage"] < self.json_data["rigol832a_fan_voltage_max"] ) :
+		while ( self.json_data['rigol832a_fan_voltage'] < self.json_data['rigol832a_fan_voltage_max'] ) :
 			# call fan_test 
 			self.fan_test()
 			# extract info
@@ -294,7 +294,7 @@ class LDOmeasure:
 			for fan in range(1, num_fans + 1):
 				fan_signals[fan] = fan_signals[fan].append( fan_read_signal.get(fan,-1) )
 			# update voltage value to next step
-			self.json_data["rigol832a_fan_voltage"] += self.json_data["rigol832a_fan_voltage_step"]
+			self.json_data['rigol832a_fan_voltage'] += self.json_data['rigol832a_fan_voltage_step']
 			
     def heater_test(self):
         #Heater test
