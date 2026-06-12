@@ -78,6 +78,7 @@ class LDOmeasure:
             self.wb.save(self.path_to_spreadsheet)
             
             self.hv_test() #add'l specific exceptions are handled within 
+            self.fan_test_sweep() # trigger PWN measurement fan test
         except:
             print("Detected exception, powering off all devices first.")
             self.emergency_shutoff()		
@@ -211,7 +212,7 @@ class LDOmeasure:
         self.k.initialize_fan()
         self.r0.power("ON", "fan")
         self.r1.power("ON", "fanread")
-		print(f"{self.prefix} --> Fans Tested at Nominal Voltage Specified ..... {self.json_data['rigol832a_fan_voltage']} ") # print out the "nominal voltage" aka the initial user specified fans voltage here, as it gets updated to max voltage after sweep test and becomes lost data
+        print(f"{self.prefix} --> Fans Tested at Nominal Voltage Specified ..... {self.json_data['rigol832a_fan_voltage']} ") # print out the "nominal voltage" aka the initial user specified fans voltage here, as it gets updated to max voltage after sweep test and becomes lost data
         print(f"{self.prefix} --> Fans turned on, waiting {self.json_data['fan_wait']} seconds for the fans to reach steady state...")
         time.sleep(self.json_data['fan_wait'])
         fan_voltage = self.r0.get_voltage("fan")
@@ -265,9 +266,10 @@ class LDOmeasure:
         self.datastore['fanread_voltage'] = fanread_voltage
         self.datastore['fanread_current'] = fanread_current
         self.datastore['fan_read_signal'] = fan_read_signal
-		return None
+        return None
 		# return fan_read_signal, fanread_voltage, fanread_current # return these for voltage sweep fan func plot
-	
+
+#---------------------------------------- Start of Fan PWM measurement ----------------------			
     def fan_test_sweep(self):
         #### all units for voltage in Volts here
         # ---- data storage lists
@@ -276,8 +278,10 @@ class LDOmeasure:
         fan_signals = {i: [] for i in range(1, num_fans + 1)} 
         prog_voltage = [] # program defined input fan voltage 
         read_voltage = [] # measured input fan voltage 
+        read_current = [] # measured input fan current
         # ----- start sweep test -----
-		# initialize sweep parameters
+		
+        # initialize sweep parameters
         steps = self.json_data['rigol832a_fan_voltage_number_of_data_samples']
         fan_voltage_max = self.json_data['rigol832a_fan_voltage_max']
         fan_voltage_min = self.json_data['rigol832a_fan_voltage_min']
@@ -287,40 +291,43 @@ class LDOmeasure:
             print(f"{self.prefix} --> Fan Sweep Test's MAXIMUM voltage value is less than or equal to MINIMUM voltage value")	
             print(f"{self.prefix} --> Please fix rigol832a_fan_voltage_max and rigol832a_fan_voltage_min values in config.json and Restart test")	
             return None # end func execution early upon error
-        # step size
-        step_size = round((fan_voltage_max - fan_voltage_min) / steps , 3) # round to 3 decimals 
+        # step size calculation, subtract one for zero-counting (first sweep point is a given)
+        step_size = round((fan_voltage_max - fan_voltage_min) / (steps - 1) , 3) # round to 3 decimals 
         # hardcode the sweep points' voltage values to ensure that max voltage value is max voltage specified if it isnt reached 
-        prog_voltage.append(fan_voltage_min)
-        for i in range(i,steps):
-                        
-			i+=1
-
-
-		
+        for i in range(0,steps):
+            prog_voltage.append(fan_voltage_min + step_size*(i)) # add step size to min voltage until max voltage is reached           
+            i+=1
+        # check max voltage, for 3 scenarios: (a) max voltage is reached exactly [yay, do nothing], (b) max voltage is less than specified max, (c) max voltage is greater than specified limit
+        # case (b) max voltage is less than specified max
+        if (prog_voltage[-1] < fan_voltage_max) :
+            prog_voltage.append(fan_voltage_max) # manually add the specified max voltage input 
+        # case (c) max voltage is greater than specified max
+        if (prog_voltage[-1] > fan_voltage_max) :
+            prog_voltage[-1] = fan_voltage_max # replace the last element with the specified max voltage input 
+        print(f"{self.prefix} --> Fan Voltage Sweep Points in Volts : {prog_voltage}")
         
-        # initialize to min fan voltage value 
-        self.json_data['rigol832a_fan_voltage'] = fan_voltage_min
-        current_voltage = self.json_data['rigol832a_fan_voltage']
-        # loop until max value is reached 
-        while ( current_voltage <= fan_voltage_max ) :
+        
+        # start sweeping
+        for sweep_voltage in prog_voltage :
+            self.json_data['rigol832a_fan_voltage'] = sweep_voltage
             # call fan_test 
-            self.fan_test()
-            prog_voltage.append(current_voltage)
+            self.fan_test() # automatically waits fan_wait seconds for fans to reach steady state
+
             # extract info
             fan_read_signal = self.datastore['fan_read_signal']
             fan_voltage = self.datastore['fan_voltage']
+            fan_current = self.datastore['fan_current']
+
             # parse info into collections
             read_voltage.append(fan_voltage)
-            
+            read_current.append(fan_current)
+
             for fan in range(1, num_fans + 1):
                 fan_signals[fan].append( fan_read_signal.get(fan,-1) )
-            # update voltage value to next step
-            next_voltage = current_voltage + step_size
-            self.json_data['rigol832a_fan_voltage'] = next_voltage
-            current_voltage = next_voltage
+
         # plot data and save 
         for fan in range(1, num_fans + 1) :
-            plt.plot(read_voltage, fan_signals.get(fan, np.zeros(len(read_voltage))), label=fan, marker='o')
+            plt.plot(prog_voltage, fan_signals.get(fan, np.zeros(len(read_voltage))), label=fan, marker='o')
         plt.title("Input Voltage v.s. Fan Oscillation Frequency", fontsize=14)
         plt.xlabel("Voltage [Volts]", fontsize=12)
         plt.ylabel("Frequency [Hertz]", fontsize=12)
@@ -331,9 +338,8 @@ class LDOmeasure:
         save_path = os.path.join(fan_results_folder, plot_name)
         plt.savefig(save_path,bbox_inches="tight")
         plt.close()
-
        
-		
+#---------------------------------------- End of Fan PWM measurement ----------------------		
 	    
 			
     def heater_test(self):
@@ -418,31 +424,31 @@ class LDOmeasure:
         for single_test in total_chs_to_test:
             single_test_done = False
             if (self.json_data["simultaneous_test"] == "True"):
-            	single_test = chs_to_test            	
+                single_test = chs_to_test            	
             try:
-            	self.hv_test_single(single_test, hv_results)
-            	single_test_done = True
+                self.hv_test_single(single_test, hv_results)
+                single_test_done = True
             except (ConnectionResetError, BrokenPipeError) as e:
-            	print(traceback.format_exc())
-            	print("Connection broken, attempting to reset...")
-            	self.c.turn_off(list(range(16)), emergency=True)             	    
-            	self.reset_pyvisa_connections()   
-            	self.r1.power("ON", "hvpullup")
-            	self.r1.power("ON", "hvpullup2")   
+                print(traceback.format_exc())
+                print("Connection broken, attempting to reset...")
+                self.c.turn_off(list(range(16)), emergency=True)             	    
+                self.reset_pyvisa_connections()   
+                self.r1.power("ON", "hvpullup")
+                self.r1.power("ON", "hvpullup2")   
             except SystemExit as e:
-            	self.emergency_shutoff() 
-            	print(traceback.format_exc())
-            	print("Detecting exception",e,"but shutting off and continuing...")      
-            	self.r1.power("ON", "hvpullup")
-            	self.r1.power("ON", "hvpullup2")              	    	
+                self.emergency_shutoff() 
+                print(traceback.format_exc())
+                print("Detecting exception",e,"but shutting off and continuing...")      
+                self.r1.power("ON", "hvpullup")
+                self.r1.power("ON", "hvpullup2")              	    	
 
             if not single_test_done:
-            	try:
+                try:
                     self.hv_test_single(single_test, hv_results)  #try again 
-            	except: #give up
-            	    print("Detected exception, powering off all devices first.")
-            	    self.emergency_shutoff()       
-            	    raise          
+                except: #give up
+                    print("Detected exception, powering off all devices first.")
+                    self.emergency_shutoff()       
+                    raise          
 
         relay_done = False
         while not relay_done:
@@ -532,9 +538,9 @@ class LDOmeasure:
 
     def hv_test_single(self, single_test, hv_results):
             if (self.json_data["simultaneous_test"] != "True"):
-            	chs_to_test = [single_test] #Test only one channel at a time
+                chs_to_test = [single_test] #Test only one channel at a time
             else:
-            	chs_to_test = single_test #Test all channels (input is array)
+                chs_to_test = single_test #Test all channels (input is array)
             		
             #chs_to_test = self.json_data['channels_to_test']
             pos_chs = []
@@ -562,18 +568,18 @@ class LDOmeasure:
             ramp_done = False
             while not ramp_done:
                 try:
-            	    self.k.set_relay(0, relay_setting)
-            	    self.c.turn_on(pos_chs)
-            	    print(f"{self.prefix} --> HV reached max values, waiting {self.json_data['hv_stability_wait']} seconds to stabilize...")
-            	    ramp_done = True
-            	    time.sleep(self.json_data['hv_stability_wait']) #may need to change for simul test?
+                    self.k.set_relay(0, relay_setting)
+                    self.c.turn_on(pos_chs)
+                    print(f"{self.prefix} --> HV reached max values, waiting {self.json_data['hv_stability_wait']} seconds to stabilize...")
+                    ramp_done = True
+                    time.sleep(self.json_data['hv_stability_wait']) #may need to change for simul test?
                 except (ConnectionResetError, BrokenPipeError) as e:
-            	    print(traceback.format_exc())
-            	    print("Connection broken, attempting to reset...")
-            	    self.c.turn_off(list(range(16)), emergency=True)
-            	    self.reset_pyvisa_connections()
-            	    self.r1.power("ON", "hvpullup")
-            	    self.r1.power("ON", "hvpullup2")
+                    print(traceback.format_exc())
+                    print("Connection broken, attempting to reset...")
+                    self.c.turn_off(list(range(16)), emergency=True)
+                    self.reset_pyvisa_connections()
+                    self.r1.power("ON", "hvpullup")
+                    self.r1.power("ON", "hvpullup2")
 
 
 
@@ -614,18 +620,18 @@ class LDOmeasure:
             ramp_done = False
             while not ramp_done:
                 try:
-            	    self.k.set_relay(0, 0)
-            	    self.c.turn_on(pos_chs)
-            	    ramp_done = True
-            	    print(f"{self.prefix} --> HV reached max value, waiting {self.json_data['hv_termination_wait']} seconds to stabilize...")
-            	    time.sleep(self.json_data['hv_termination_wait'])
+                    self.k.set_relay(0, 0)
+                    self.c.turn_on(pos_chs)
+                    ramp_done = True
+                    print(f"{self.prefix} --> HV reached max value, waiting {self.json_data['hv_termination_wait']} seconds to stabilize...")
+                    time.sleep(self.json_data['hv_termination_wait'])
                 except (ConnectionResetError, BrokenPipeError) as e:
-            	    print(traceback.format_exc())
-            	    print("Connection broken, attempting to reset...")
-            	    self.c.turn_off(list(range(16)), emergency=True)
-            	    self.reset_pyvisa_connections()
-            	    self.r1.power("ON", "hvpullup")
-            	    self.r1.power("ON", "hvpullup2")
+                    print(traceback.format_exc())
+                    print("Connection broken, attempting to reset...")
+                    self.c.turn_off(list(range(16)), emergency=True)
+                    self.reset_pyvisa_connections()
+                    self.r1.power("ON", "hvpullup")
+                    self.r1.power("ON", "hvpullup2")
 
 
             csv_name = f"{self.test_name}_ch{chs_string}_pos_term_on.csv"
@@ -675,18 +681,18 @@ class LDOmeasure:
             ramp_done = False
             while not ramp_done:
                 try:
-            	    self.k.set_relay(relay_setting, relay_setting)
-            	    self.c.turn_on(neg_chs)
-            	    ramp_done = True
-            	    print(f"{self.prefix} --> HV reached max value, waiting {self.json_data['hv_stability_wait']} seconds to stabilize...")
-            	    time.sleep(self.json_data['hv_stability_wait'])
+                    self.k.set_relay(relay_setting, relay_setting)
+                    self.c.turn_on(neg_chs)
+                    ramp_done = True
+                    print(f"{self.prefix} --> HV reached max value, waiting {self.json_data['hv_stability_wait']} seconds to stabilize...")
+                    time.sleep(self.json_data['hv_stability_wait'])
                 except (ConnectionResetError, BrokenPipeError) as e:
-            	    print(traceback.format_exc())
-            	    print("Connection broken, attempting to reset...")
-            	    self.c.turn_off(list(range(16)), emergency=True)
-            	    self.reset_pyvisa_connections()
-            	    self.r1.power("ON", "hvpullup")
-            	    self.r1.power("ON", "hvpullup2")
+                    print(traceback.format_exc())
+                    print("Connection broken, attempting to reset...")
+                    self.c.turn_off(list(range(16)), emergency=True)
+                    self.reset_pyvisa_connections()
+                    self.r1.power("ON", "hvpullup")
+                    self.r1.power("ON", "hvpullup2")
 
             csv_name = f"{self.test_name}_ch{chs_string}_neg_open_on.csv"
             self.record_hv_data(csv_name)
@@ -726,18 +732,18 @@ class LDOmeasure:
 
             while not ramp_done:
                 try:
-            	    self.k.set_relay(relay_setting, 0)
-            	    self.c.turn_on(neg_chs)
-            	    ramp_done = True
-            	    print(f"{self.prefix} --> HV reached max value, waiting {self.json_data['hv_termination_wait']} seconds to stabilize...")
-            	    time.sleep(self.json_data['hv_termination_wait'])
+                    self.k.set_relay(relay_setting, 0)
+                    self.c.turn_on(neg_chs)
+                    ramp_done = True
+                    print(f"{self.prefix} --> HV reached max value, waiting {self.json_data['hv_termination_wait']} seconds to stabilize...")
+                    time.sleep(self.json_data['hv_termination_wait'])
                 except (ConnectionResetError, BrokenPipeError) as e:
-            	    print(traceback.format_exc())
-            	    print("Connection broken, attempting to reset...")
-            	    self.c.turn_off(list(range(16)), emergency=True)
-            	    self.reset_pyvisa_connections()
-            	    self.r1.power("ON", "hvpullup")
-            	    self.r1.power("ON", "hvpullup2")
+                    print(traceback.format_exc())
+                    print("Connection broken, attempting to reset...")
+                    self.c.turn_off(list(range(16)), emergency=True)
+                    self.reset_pyvisa_connections()
+                    self.r1.power("ON", "hvpullup")
+                    self.r1.power("ON", "hvpullup2")
                 # except ValueError as e:
                     # print(e)
                     # #print("Positive channel voltages:", self.c.get_current(pos_chs))
