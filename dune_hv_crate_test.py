@@ -278,23 +278,55 @@ class LDOmeasure:
 		read_voltage = [] # measured input fan voltage 
 		
 		# ----- start sweep test -----
-		# initialize to min fan voltage value 
-		self.json_data['rigol832a_fan_voltage'] = self.json_data['rigol832a_fan_voltage_min']
-		prog_voltage.append(self.json_data['rigol832a_fan_voltage_min'])
+        step_size = self.json_data['rigol832a_fan_voltage_step_size']
+		fan_voltage_max = self.json_data['rigol832a_fan_voltage_max']
+		fan_voltage_min = self.json_data['rigol832a_fan_voltage_min']
 		
+		# initialize to min fan voltage value 
+		
+		self.json_data['rigol832a_fan_voltage'] = fan_voltage_min
+		current_voltage = self.json_data['rigol832a_fan_voltage']
+
 		# loop until max value is reached 
-		while ( self.json_data['rigol832a_fan_voltage'] < self.json_data['rigol832a_fan_voltage_max'] ) :
+		while ( current_voltage < fan_voltage_max ) :
 			# call fan_test 
 			self.fan_test()
+			prog_voltage.append(current_voltage)
+			
 			# extract info
 			fan_read_signal = self.datastore['fan_read_signal']
 			fan_voltage = self.datastore['fan_voltage']
+			
 			# parse info into collections
 			read_voltage.append(fan_voltage)
+			
 			for fan in range(1, num_fans + 1):
 				fan_signals[fan] = fan_signals[fan].append( fan_read_signal.get(fan,-1) )
+				
 			# update voltage value to next step
-			self.json_data['rigol832a_fan_voltage'] += self.json_data['rigol832a_fan_voltage_step']
+			next_voltage = current_voltage + step_size
+			self.json_data['rigol832a_fan_voltage'] = next_voltage
+			current_voltage = next_voltage
+    	# plot data and save 
+	    # plot_space = np.linspace(fan_voltage_min, fan_voltage_max, ((fan_voltage_max - fan_voltage_min) // step_size ) + 1 )
+        for fan in range(1, num_fans + 1) :
+			plt.plot(read_voltage, fan_signals.get(fan, np.zeros(len(read_voltage))), label=fan, marker='o')
+
+        plt.title("Input Voltage v.s. Fan Oscillation Frequency", fontsize=14)
+        plt.xlabel("Voltage [Volts]", fontsize=12)
+        plt.ylabel("Frequency [Hertz]", fontsize=12)
+        plt.legend()
+        # need to find how it makes the dated folder for each results first then make it output the results to that directly 
+        # for now, it just outputs it into results
+	    fan_results_folder = "fan sweep test results"
+        plot_name = 'fans_volt_vs_speed.png'
+        save_path = os.path.join(fan_results_folder, plot_name)
+        plt.savefig(save_path,bbox_inches="tight")
+        plt.close()
+
+       
+		
+	    
 			
     def heater_test(self):
         #Heater test
