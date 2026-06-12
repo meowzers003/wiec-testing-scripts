@@ -277,9 +277,27 @@ class LDOmeasure:
         prog_voltage = [] # program defined input fan voltage 
         read_voltage = [] # measured input fan voltage 
         # ----- start sweep test -----
-        step_size = self.json_data['rigol832a_fan_voltage_step_size']
+		# initialize sweep parameters
+        steps = self.json_data['rigol832a_fan_voltage_number_of_data_samples']
         fan_voltage_max = self.json_data['rigol832a_fan_voltage_max']
         fan_voltage_min = self.json_data['rigol832a_fan_voltage_min']
+        # check that voltage max > voltage min input 
+        if (fan_voltage_max <= fan_voltage_min) :
+            print(f"{self.prefix} --> CONFIG ERROR! Invalid Fan Voltage Range: ")			
+            print(f"{self.prefix} --> Fan Sweep Test's MAXIMUM voltage value is less than or equal to MINIMUM voltage value")	
+            print(f"{self.prefix} --> Please fix rigol832a_fan_voltage_max and rigol832a_fan_voltage_min values in config.json and Restart test")	
+            return None # end func execution early upon error
+        # step size
+        step_size = round((fan_voltage_max - fan_voltage_min) / steps , 3) # round to 3 decimals 
+        # hardcode the sweep points' voltage values to ensure that max voltage value is max voltage specified if it isnt reached 
+        prog_voltage.append(fan_voltage_min)
+        for i in range(i,steps):
+                        
+			i+=1
+
+
+		
+        
         # initialize to min fan voltage value 
         self.json_data['rigol832a_fan_voltage'] = fan_voltage_min
         current_voltage = self.json_data['rigol832a_fan_voltage']
