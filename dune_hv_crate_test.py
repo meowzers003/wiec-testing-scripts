@@ -316,9 +316,9 @@ class LDOmeasure:
         plt.xlabel("Voltage [Volts]", fontsize=12)
         plt.ylabel("Frequency [Hertz]", fontsize=12)
         plt.legend()
-        # need to find how it makes the dated folder for each results first then make it output the results to that directly 
-        # for now, it just outputs it into results
-	    fan_results_folder = "fan sweep test results"
+
+        # make a folder for fan sweep results, store png plot in there
+	    fan_results_folder = os.path.join(self.results_path, "fan sweep test results") 
         plot_name = 'fans_volt_vs_speed.png'
         save_path = os.path.join(fan_results_folder, plot_name)
         plt.savefig(save_path,bbox_inches="tight")
