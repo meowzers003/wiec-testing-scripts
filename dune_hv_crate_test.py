@@ -269,56 +269,46 @@ class LDOmeasure:
 		# return fan_read_signal, fanread_voltage, fanread_current # return these for voltage sweep fan func plot
 	
     def fan_test_sweep(self):
-		#### all units for voltage in Volts here
-		# ---- data storage lists, worry about graphing later 
-		# dictionaries where key = specific member (aka fan), value = y-axis variable (osc freq)
-		num_fans = self.json_data['keysight970a_fan_num'] 
-		fan_signals = {i: [] for i in range(1, num_fans + 1)} 
-		prog_voltage = [] # program defined input fan voltage 
-		read_voltage = [] # measured input fan voltage 
-		
-		# ----- start sweep test -----
+        #### all units for voltage in Volts here
+        # ---- data storage lists
+        # dictionaries where key = specific member (aka fan), value = y-axis variable (osc freq)
+        num_fans = self.json_data['keysight970a_fan_num'] 
+        fan_signals = {i: [] for i in range(1, num_fans + 1)} 
+        prog_voltage = [] # program defined input fan voltage 
+        read_voltage = [] # measured input fan voltage 
+        # ----- start sweep test -----
         step_size = self.json_data['rigol832a_fan_voltage_step_size']
-		fan_voltage_max = self.json_data['rigol832a_fan_voltage_max']
-		fan_voltage_min = self.json_data['rigol832a_fan_voltage_min']
-		
-		# initialize to min fan voltage value 
-		
-		self.json_data['rigol832a_fan_voltage'] = fan_voltage_min
-		current_voltage = self.json_data['rigol832a_fan_voltage']
-
-		# loop until max value is reached 
-		while ( current_voltage < fan_voltage_max ) :
-			# call fan_test 
-			self.fan_test()
-			prog_voltage.append(current_voltage)
-			
-			# extract info
-			fan_read_signal = self.datastore['fan_read_signal']
-			fan_voltage = self.datastore['fan_voltage']
-			
-			# parse info into collections
-			read_voltage.append(fan_voltage)
-			
-			for fan in range(1, num_fans + 1):
-				fan_signals[fan] = fan_signals[fan].append( fan_read_signal.get(fan,-1) )
-				
-			# update voltage value to next step
-			next_voltage = current_voltage + step_size
-			self.json_data['rigol832a_fan_voltage'] = next_voltage
-			current_voltage = next_voltage
-    	# plot data and save 
-	    # plot_space = np.linspace(fan_voltage_min, fan_voltage_max, ((fan_voltage_max - fan_voltage_min) // step_size ) + 1 )
+        fan_voltage_max = self.json_data['rigol832a_fan_voltage_max']
+        fan_voltage_min = self.json_data['rigol832a_fan_voltage_min']
+        # initialize to min fan voltage value 
+        self.json_data['rigol832a_fan_voltage'] = fan_voltage_min
+        current_voltage = self.json_data['rigol832a_fan_voltage']
+        # loop until max value is reached 
+        while ( current_voltage <= fan_voltage_max ) :
+            # call fan_test 
+            self.fan_test()
+            prog_voltage.append(current_voltage)
+            # extract info
+            fan_read_signal = self.datastore['fan_read_signal']
+            fan_voltage = self.datastore['fan_voltage']
+            # parse info into collections
+            read_voltage.append(fan_voltage)
+            
+            for fan in range(1, num_fans + 1):
+                fan_signals[fan].append( fan_read_signal.get(fan,-1) )
+            # update voltage value to next step
+            next_voltage = current_voltage + step_size
+            self.json_data['rigol832a_fan_voltage'] = next_voltage
+            current_voltage = next_voltage
+        # plot data and save 
         for fan in range(1, num_fans + 1) :
-			plt.plot(read_voltage, fan_signals.get(fan, np.zeros(len(read_voltage))), label=fan, marker='o')
-
+            plt.plot(read_voltage, fan_signals.get(fan, np.zeros(len(read_voltage))), label=fan, marker='o')
         plt.title("Input Voltage v.s. Fan Oscillation Frequency", fontsize=14)
         plt.xlabel("Voltage [Volts]", fontsize=12)
         plt.ylabel("Frequency [Hertz]", fontsize=12)
         plt.legend()
-
         # make a folder for fan sweep results, store png plot in there
-	    fan_results_folder = os.path.join(self.results_path, "fan sweep test results") 
+        fan_results_folder = os.path.join(self.results_path, "fan sweep test results") 
         plot_name = 'fans_volt_vs_speed.png'
         save_path = os.path.join(fan_results_folder, plot_name)
         plt.savefig(save_path,bbox_inches="tight")
