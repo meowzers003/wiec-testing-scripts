@@ -279,31 +279,38 @@ class LDOmeasure:
         prog_voltage = [] # program defined input fan voltage 
         read_voltage = [] # measured input fan voltage 
         read_current = [] # measured input fan current
+        # create folder for storing fan data plots
+        fan_results_folder = os.path.join(self.results_path, "fan sweep test results") 
+        os.makedirs(fan_results_folder, exist_ok=True) # check if folder exists, if not then create it
+
         # ----- start sweep test -----
 		
         # initialize sweep parameters
-        steps = self.json_data['rigol832a_fan_voltage_number_of_data_samples']
+        steps = int(self.json_data['rigol832a_fan_voltage_number_of_data_samples'])
         fan_voltage_max = self.json_data['rigol832a_fan_voltage_max']
         fan_voltage_min = self.json_data['rigol832a_fan_voltage_min']
+        # check that step size is at least 2 (otherwise it is just a one voltage input value...)
+        if (steps < 2) :
+            print(f"{self.prefix} --> CONFIG ERROR! Invalid Number of Data Samples: ")			
+            print(f"{self.prefix} --> Fan Sweep Test's number of data samples must be at least 2 to perform a sweep")	
+            print(f"{self.prefix} --> Please fix rigol832a_fan_voltage_number_of_data_samples value in config.json and Restart test")	
+            return None # end func execution early upon error
+        
         # check that voltage max > voltage min input 
         if (fan_voltage_max <= fan_voltage_min) :
             print(f"{self.prefix} --> CONFIG ERROR! Invalid Fan Voltage Range: ")			
             print(f"{self.prefix} --> Fan Sweep Test's MAXIMUM voltage value is less than or equal to MINIMUM voltage value")	
             print(f"{self.prefix} --> Please fix rigol832a_fan_voltage_max and rigol832a_fan_voltage_min values in config.json and Restart test")	
             return None # end func execution early upon error
-        # step size calculation, subtract one for zero-counting (first sweep point is a given)
-        step_size = round((fan_voltage_max - fan_voltage_min) / (steps - 1) , 3) # round to 3 decimals 
+        
+     
         # hardcode the sweep points' voltage values to ensure that max voltage value is max voltage specified if it isnt reached 
-        for i in range(0,steps):
-            prog_voltage.append(fan_voltage_min + step_size*(i)) # add step size to min voltage until max voltage is reached           
-            i+=1
-        # check max voltage, for 3 scenarios: (a) max voltage is reached exactly [yay, do nothing], (b) max voltage is less than specified max, (c) max voltage is greater than specified limit
-        # case (b) max voltage is less than specified max
-        if (prog_voltage[-1] < fan_voltage_max) :
-            prog_voltage.append(fan_voltage_max) # manually add the specified max voltage input 
-        # case (c) max voltage is greater than specified max
-        if (prog_voltage[-1] > fan_voltage_max) :
-            prog_voltage[-1] = fan_voltage_max # replace the last element with the specified max voltage input 
+        for i in range(steps):
+            voltage = fan_voltage_min + (fan_voltage_max - fan_voltage_min) * i / (steps - 1) # calculate voltage sweep point 
+            prog_voltage.append(round(voltage, 3)) 
+    
+        # force the last sweep point to be fan_voltage max
+        prog_voltage[-1] = fan_voltage_max # replace the last element with the specified max voltage input 
         print(f"{self.prefix} --> Fan Voltage Sweep Points in Volts : {prog_voltage}")
         
         
@@ -327,13 +334,12 @@ class LDOmeasure:
 
         # plot data and save 
         for fan in range(1, num_fans + 1) :
-            plt.plot(prog_voltage, fan_signals.get(fan, np.zeros(len(read_voltage))), label=fan, marker='o')
-        plt.title("Input Voltage v.s. Fan Oscillation Frequency", fontsize=14)
+            plt.plot(prog_voltage, fan_signals.get(fan, np.zeros(len(prog_voltage))), label=f"Fan {fan}", marker='o')
+        plt.title("Input Voltage vs. Fan Oscillation Frequency", fontsize=14)
         plt.xlabel("Voltage [Volts]", fontsize=12)
         plt.ylabel("Frequency [Hertz]", fontsize=12)
         plt.legend()
-        # make a folder for fan sweep results, store png plot in there
-        fan_results_folder = os.path.join(self.results_path, "fan sweep test results") 
+        # store png plot in the folder
         plot_name = 'fans_volt_vs_speed.png'
         save_path = os.path.join(fan_results_folder, plot_name)
         plt.savefig(save_path,bbox_inches="tight")
