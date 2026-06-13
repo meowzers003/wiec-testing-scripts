@@ -332,19 +332,29 @@ class LDOmeasure:
 
             for fan in range(1, num_fans + 1):
                 fan_signals[fan].append( fan_read_signal.get(fan,-1) )
-
-        # plot data and save 
+        # plot data (individual plots for each fan)
         for fan in range(1, num_fans + 1) :
-            plt.plot(prog_voltage, fan_signals.get(fan, np.zeros(len(prog_voltage))), label=f"Fan {fan}", marker='o')
-        plt.title("Input Voltage vs. Fan PWM Measurement", fontsize=14)
-        plt.xlabel("Voltage [Volts]", fontsize=12)
-        plt.ylabel("Frequency [Hertz]", fontsize=12)
-        plt.legend()
-        # store png plot in the folder
-        plot_name = 'fans_volt_vs_speed.png'
-        save_path = os.path.join(fan_results_folder, plot_name)
-        plt.savefig(save_path,bbox_inches="tight")
+            plt.plot(prog_voltage, fan_signals.get(fan, np.zeros(len(prog_voltage))), marker='o')
+            plt.title("Input Voltage vs. Fan #" + str(fan) + " PWM Measurement", fontsize=14)
+            plt.xlabel("Voltage [Volts]", fontsize=12)
+            plt.ylabel("Frequency [Hertz]", fontsize=12)
+            # store png plot in the folder
+            plot_name = 'fans_volt_vs_speed_fan' + str(fan) + '.png'
+            save_path = os.path.join(fan_results_folder, plot_name)
+            plt.savefig(save_path,bbox_inches="tight")
         plt.close()
+        # plot data and save (single plot with all fans)
+        # for fan in range(1, num_fans + 1) :
+        #     plt.plot(prog_voltage, fan_signals.get(fan, np.zeros(len(prog_voltage))), label=f"Fan {fan}", marker='o')
+        # plt.title("Input Voltage vs. Fan PWM Measurement", fontsize=14)
+        # plt.xlabel("Voltage [Volts]", fontsize=12)
+        # plt.ylabel("Frequency [Hertz]", fontsize=12)
+        # plt.legend()
+        # # store png plot in the folder
+        # plot_name = 'fans_volt_vs_speed.png'
+        # save_path = os.path.join(fan_results_folder, plot_name)
+        # plt.savefig(save_path,bbox_inches="tight")
+        # plt.close()
        
 #---------------------------------------- End of Fan PWM measurement ----------------------		
 	    
