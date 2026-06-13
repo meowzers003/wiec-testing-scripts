@@ -280,7 +280,7 @@ class LDOmeasure:
         read_voltage = [] # measured input fan voltage 
         read_current = [] # measured input fan current
         # create folder for storing fan data plots
-        fan_results_folder = os.path.join(self.results_path, "fan sweep test results") 
+        fan_results_folder = os.path.join(self.results_path, "fan PWM results") 
         os.makedirs(fan_results_folder, exist_ok=True) # check if folder exists, if not then create it
 
         # ----- start sweep test -----
@@ -317,6 +317,7 @@ class LDOmeasure:
         # start sweeping
         for sweep_voltage in prog_voltage :
             self.json_data['rigol832a_fan_voltage'] = sweep_voltage
+            self.r0.setup_fan() # apply new voltage to fan
             # call fan_test 
             self.fan_test() # automatically waits fan_wait seconds for fans to reach steady state
 
@@ -335,7 +336,7 @@ class LDOmeasure:
         # plot data and save 
         for fan in range(1, num_fans + 1) :
             plt.plot(prog_voltage, fan_signals.get(fan, np.zeros(len(prog_voltage))), label=f"Fan {fan}", marker='o')
-        plt.title("Input Voltage vs. Fan Oscillation Frequency", fontsize=14)
+        plt.title("Input Voltage vs. Fan PWM Measurement", fontsize=14)
         plt.xlabel("Voltage [Volts]", fontsize=12)
         plt.ylabel("Frequency [Hertz]", fontsize=12)
         plt.legend()
