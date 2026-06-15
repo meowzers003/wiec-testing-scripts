@@ -333,28 +333,88 @@ class LDOmeasure:
             for fan in range(1, num_fans + 1):
                 fan_signals[fan].append( fan_read_signal.get(fan,-1) )
         # plot data (individual plots for each fan)
-        for fan in range(1, num_fans + 1) :
-            plt.plot(prog_voltage, fan_signals.get(fan, np.zeros(len(prog_voltage))), marker='o')
-            plt.title("Input Voltage vs. Fan #" + str(fan) + " PWM Measurement", fontsize=14)
-            plt.xlabel("Voltage [Volts]", fontsize=12)
-            plt.ylabel("Frequency [Hertz]", fontsize=12)
+        # plot data: individual input voltage vs. frequency plot for each fan
+        for fan in range(1, num_fans + 1):
+            plt.figure()
+
+            plt.plot(
+                prog_voltage,
+                fan_signals[fan],
+                marker='o'
+            )
+
+            plt.title(
+                "Programmed Input Voltage vs. Fan #" + str(fan) + " PWM Frequency",
+                fontsize=14
+            )
+            plt.xlabel("Programmed Fan Voltage [V]", fontsize=12)
+            plt.ylabel("Oscillation Frequency [Hz]", fontsize=12)
+            plt.grid(True)
+
             # store png plot in the folder
-            plot_name = 'fans_volt_vs_speed_fan' + str(fan) + '.png'
+            plot_name = "fan_" + str(fan) + "_voltage_vs_frequency.png"
             save_path = os.path.join(fan_results_folder, plot_name)
-            plt.savefig(save_path,bbox_inches="tight")
+            plt.savefig(save_path, bbox_inches="tight")
+            plt.close()
+
+        # plot data: programmed input voltage vs. read input voltage
+        plt.figure()
+
+        plt.plot(
+            prog_voltage,
+            read_voltage,
+            marker='o'
+        )
+
+        plt.title(
+            "Programmed Fan Voltage vs. Read Fan Voltage",
+            fontsize=14
+        )
+        plt.xlabel("Programmed Fan Voltage [V]", fontsize=12)
+        plt.ylabel("Read Fan Voltage [V]", fontsize=12)
+        plt.grid(True)
+
+        # store png plot in the folder
+        plot_name = "programmed_voltage_vs_read_voltage.png"
+        save_path = os.path.join(fan_results_folder, plot_name)
+        plt.savefig(save_path, bbox_inches="tight")
         plt.close()
-        # plot data and save (single plot with all fans)
-        # for fan in range(1, num_fans + 1) :
-        #     plt.plot(prog_voltage, fan_signals.get(fan, np.zeros(len(prog_voltage))), label=f"Fan {fan}", marker='o')
-        # plt.title("Input Voltage vs. Fan PWM Measurement", fontsize=14)
-        # plt.xlabel("Voltage [Volts]", fontsize=12)
-        # plt.ylabel("Frequency [Hertz]", fontsize=12)
-        # plt.legend()
-        # # store png plot in the folder
-        # plot_name = 'fans_volt_vs_speed.png'
-        # save_path = os.path.join(fan_results_folder, plot_name)
-        # plt.savefig(save_path,bbox_inches="tight")
-        # plt.close()
+
+        # save all sweep data into one CSV file
+        csv_headers = [
+            "Programmed Fan Voltage [V]",
+            "Read Fan Voltage [V]",
+            "Read Fan Current [A]"
+        ]
+
+        for fan in range(1, num_fans + 1):
+            csv_headers.append(
+                "Fan #" + str(fan) + " - Oscillation Frequency [Hz]"
+            )
+
+        csv_name = "fan_pwm_results.csv"
+        csv_save_path = os.path.join(fan_results_folder, csv_name)
+
+        with open(csv_save_path, mode="w", newline="") as csv_file:
+            csv_writer = csv.writer(csv_file)
+
+            # write header row
+            csv_writer.writerow(csv_headers)
+
+            # write one row for each sweep voltage
+            for i in range(len(prog_voltage)):
+                csv_row = [
+                    prog_voltage[i],
+                    read_voltage[i],
+                    read_current[i]
+                ]
+
+                for fan in range(1, num_fans + 1):
+                    csv_row.append(fan_signals[fan][i])
+
+                csv_writer.writerow(csv_row)
+
+        print(f"{self.prefix} --> Fan PWM plots and CSV data saved to: {fan_results_folder}")
        
 #---------------------------------------- End of Fan PWM measurement ----------------------		
 	    
