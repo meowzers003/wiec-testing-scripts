@@ -56,13 +56,13 @@
 "rc_filter_ch0_3_r_ohm": 49900,
 "rc_filter_ch0_3_c_f": 30e-9,
 
-"rc_filter_ch4_7_r_ohm": 2000000,
-"rc_filter_ch4_7_c_f": 30e-9,
+"rc_filter_ch4_7_r_ohm": 24000,
+"rc_filter_ch4_7_c_f": 0.1e-6,
 
 "rc_filter_termination_ohm": 10000,
 
-"rc_filter_open_model_voltage": 2000,
-"rc_filter_term_model_voltage": 500,
+"rc_filter_open_model_voltage": 1500,
+"rc_filter_term_model_voltage": 20,
 
 "rc_filter_curve_points": 500,
 "rc_filter_curve_time_multiplier": 5.0,
