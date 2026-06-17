@@ -70,6 +70,8 @@ class LDOmeasure:
 
         self.datastore['Tests'] = {}
         
+        # Run analytical RC filter model before fan, fan PWM, heater, and HV tests.
+        self.store_rc_filter_time_constants()
 
         try:
             self.fan_test()
@@ -1251,7 +1253,268 @@ class LDOmeasure:
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%M:%S'))
         ax.tick_params(axis='x', labelsize=tick_size, colors='black')  # Set tick size and color here
         ax.tick_params(axis='y', labelsize=tick_size, colors='black')  # Set tick size and color here
+   
+   
+   #------------------------------ true RC model functions for the 2 pole filter ------------------------------
+    def _get_rc_filter_components(self, hv_ch):
+        """
+        Returns RC component values for one internal HV channel.
 
+        Internal channels 0-3 use rc_filter_ch0_3_r_ohm and rc_filter_ch0_3_c_f.
+        Internal channels 4-7 use rc_filter_ch4_7_r_ohm and rc_filter_ch4_7_c_f.
+        """
+
+        hv_ch = int(hv_ch)
+
+        if hv_ch < 0 or hv_ch > 7:
+            raise ValueError(f"hv_ch must be internal channel number 0 through 7. Got {hv_ch}.")
+
+        if hv_ch <= 3:
+            r_value = float(self.json_data["rc_filter_ch0_3_r_ohm"])
+            c_value = float(self.json_data["rc_filter_ch0_3_c_f"])
+            bank = "ch0_3"
+        else:
+            r_value = float(self.json_data["rc_filter_ch4_7_r_ohm"])
+            c_value = float(self.json_data["rc_filter_ch4_7_c_f"])
+            bank = "ch4_7"
+
+        if r_value <= 0:
+            raise ValueError(f"RC filter resistance for channel {hv_ch} must be > 0.")
+
+        if c_value <= 0:
+            raise ValueError(f"RC filter capacitance for channel {hv_ch} must be > 0.")
+
+        return r_value, r_value, c_value, c_value, bank
+
+
+    def _two_pole_rc_time_constants(self, r_top, r_bottom, c_top, c_bottom, load_ohm=None):
+        """
+        Analytically calculates the two natural time constants of a directly
+        cascaded 2-pole RC ladder. This does not use scipy curve_fit.
+        """
+
+        g_top = 1.0 / r_top
+        g_bottom = 1.0 / r_bottom
+        g_load = 0.0 if load_ohm is None else 1.0 / float(load_ohm)
+
+        if load_ohm is not None and float(load_ohm) <= 0:
+            raise ValueError("load_ohm must be positive, or None for open load.")
+
+        a11 = -(g_top + g_bottom) / c_top
+        a12 = g_bottom / c_top
+        a21 = g_bottom / c_bottom
+        a22 = -(g_bottom + g_load) / c_bottom
+
+        trace = a11 + a22
+        determinant = (a11 * a22) - (a12 * a21)
+        discriminant = (trace * trace) - (4.0 * determinant)
+
+        if discriminant < 0.0 and abs(discriminant) < 1e-18:
+            discriminant = 0.0
+
+        if discriminant < 0.0:
+            raise ValueError("RC pole calculation produced complex poles. Check component values and topology assumptions.")
+
+        sqrt_disc = discriminant ** 0.5
+        pole_1 = 0.5 * (trace + sqrt_disc)
+        pole_2 = 0.5 * (trace - sqrt_disc)
+
+        if pole_1 >= 0.0 or pole_2 >= 0.0:
+            raise ValueError("RC pole calculation produced a non-decaying pole. Check component values and load model.")
+
+        tau_1 = -1.0 / pole_1
+        tau_2 = -1.0 / pole_2
+        tau_fast = min(tau_1, tau_2)
+        tau_slow = max(tau_1, tau_2)
+
+        return {"tau_fast_s": float(tau_fast), "tau_slow_s": float(tau_slow), "dominant_tau_s": float(tau_slow), "settling_5tau_s": float(5.0 * tau_slow), "pole_fast_1_per_s": float(-1.0 / tau_fast), "pole_slow_1_per_s": float(-1.0 / tau_slow)}
+
+
+    def _two_pole_rc_state_matrix(self, r_top, r_bottom, c_top, c_bottom, load_ohm=None):
+        """
+        Builds the 2-state RC ladder matrix.
+        State vector: x = [node1_voltage, output_voltage]
+        """
+
+        g_top = 1.0 / r_top
+        g_bottom = 1.0 / r_bottom
+        g_load = 0.0 if load_ohm is None else 1.0 / float(load_ohm)
+
+        return np.array([[-(g_top + g_bottom) / c_top, g_bottom / c_top], [g_bottom / c_bottom, -(g_bottom + g_load) / c_bottom]], dtype=float)
+
+
+    def _two_pole_rc_step_curve(self, r_top, r_bottom, c_top, c_bottom, source_voltage, load_ohm=None, n_points=500, time_multiplier=5.0, transition="step_on"):
+        """
+        Generates modeled voltage/current data points for a 2-pole RC filter.
+
+        transition="step_on": source steps from 0 V to source_voltage.
+        transition="step_off": circuit starts charged, then source steps to 0 V.
+        """
+
+        n_points = max(2, int(n_points))
+        time_multiplier = max(1.0, float(time_multiplier))
+        source_voltage = float(source_voltage)
+
+        tau_info = self._two_pole_rc_time_constants(r_top=r_top, r_bottom=r_bottom, c_top=c_top, c_bottom=c_bottom, load_ohm=load_ohm)
+        t_end = max(time_multiplier * tau_info["dominant_tau_s"], 1e-12)
+        time_s = np.linspace(0.0, t_end, n_points)
+
+        A = self._two_pole_rc_state_matrix(r_top=r_top, r_bottom=r_bottom, c_top=c_top, c_bottom=c_bottom, load_ohm=load_ohm)
+        input_on = np.array([source_voltage / (r_top * c_top), 0.0], dtype=float)
+        steady_on = -np.linalg.solve(A, input_on)
+
+        if transition == "step_on":
+            x_initial = np.array([0.0, 0.0], dtype=float)
+            x_final = steady_on
+            source_after_switch = source_voltage
+        elif transition == "step_off":
+            x_initial = steady_on
+            x_final = np.array([0.0, 0.0], dtype=float)
+            source_after_switch = 0.0
+        else:
+            raise ValueError(f"transition must be 'step_on' or 'step_off'. Got {transition}.")
+
+        eigvals, eigvecs = np.linalg.eig(A)
+        coeff = np.linalg.solve(eigvecs, x_initial - x_final)
+        modes = coeff[:, None] * np.exp(eigvals[:, None] * time_s[None, :])
+        state = (x_final[:, None] + eigvecs @ modes).T
+        state = np.real_if_close(state, tol=1000)
+
+        if np.iscomplexobj(state):
+            raise ValueError("RC curve generation produced complex state values. Check RC values and load assumptions.")
+
+        state = state.astype(float)
+        node1_voltage = state[:, 0]
+        output_voltage = state[:, 1]
+        source_voltage_array = np.full_like(time_s, source_after_switch, dtype=float)
+        source_current = (source_voltage_array - node1_voltage) / r_top
+        load_current = np.zeros_like(time_s, dtype=float) if load_ohm is None else output_voltage / float(load_ohm)
+
+        return {"time_s": time_s, "source_voltage_v": source_voltage_array, "node1_voltage_v": node1_voltage, "output_voltage_v": output_voltage, "source_current_a": source_current, "load_current_a": load_current}
+
+
+    def _save_rc_curve_csv(self, curve_data, csv_path):
+        """
+        Saves modeled RC voltage/current curve points to CSV.
+        """
+
+        with open(csv_path, mode="w", newline="") as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(["Time [s]", "Source Voltage [V]", "Node 1 Voltage [V]", "Output Voltage [V]", "Source Current [A]", "Load Current [A]"])
+
+            for i in range(len(curve_data["time_s"])):
+                writer.writerow([curve_data["time_s"][i], curve_data["source_voltage_v"][i], curve_data["node1_voltage_v"][i], curve_data["output_voltage_v"][i], curve_data["source_current_a"][i], curve_data["load_current_a"][i]])
+
+
+    def _save_rc_curve_plot(self, curve_data, plot_path, title):
+        """
+        Saves one RC model plot with voltage and current versus time.
+        """
+
+        fig = plt.figure(figsize=(14, 9), dpi=100)
+        ax1 = fig.add_subplot(1, 1, 1)
+
+        ax1.plot(curve_data["time_s"], curve_data["node1_voltage_v"], label="Node 1 Voltage")
+        ax1.plot(curve_data["time_s"], curve_data["output_voltage_v"], label="Output Voltage")
+        ax1.set_xlabel("Time [s]", fontsize=14)
+        ax1.set_ylabel("Voltage [V]", fontsize=14)
+        ax1.grid(True)
+
+        ax2 = ax1.twinx()
+        ax2.plot(curve_data["time_s"], curve_data["source_current_a"], label="Source Current")
+
+        if np.any(np.abs(curve_data["load_current_a"]) > 0.0):
+            ax2.plot(curve_data["time_s"], curve_data["load_current_a"], label="Load Current")
+
+        ax2.set_ylabel("Current [A]", fontsize=14)
+
+        lines_1, labels_1 = ax1.get_legend_handles_labels()
+        lines_2, labels_2 = ax2.get_legend_handles_labels()
+        fig.legend(lines_1 + lines_2, labels_1 + labels_2, loc="lower left", fontsize=12)
+
+        fig.suptitle(title, fontsize=18)
+        fig.tight_layout()
+        fig.savefig(plot_path, bbox_inches="tight")
+        plt.close(fig)
+
+
+    def store_rc_filter_time_constants(self):
+        """
+        Calculates, plots, and stores modeled RC filter data before any hardware tests.
+
+        Outputs are written to:
+            self.results_path / "RC filter model results"
+
+        Files created:
+            - rc_filter_time_constants_summary.csv
+            - modeled curve CSV files
+            - matching PNG plots
+        """
+
+        rc_results_folder = os.path.join(self.results_path, "RC filter model results")
+        os.makedirs(rc_results_folder, exist_ok=True)
+
+        termination_ohm = float(self.json_data.get("rc_filter_termination_ohm", 10000.0))
+        curve_points = int(self.json_data.get("rc_filter_curve_points", 500))
+        time_multiplier = float(self.json_data.get("rc_filter_curve_time_multiplier", 5.0))
+
+        open_source_voltage = abs(float(self.json_data.get("rc_filter_open_model_voltage", self.json_data.get("caenR8033DM_open_voltage", 1.0))))
+        term_source_voltage = abs(float(self.json_data.get("rc_filter_term_model_voltage", self.json_data.get("caenR8033DM_term_voltage", open_source_voltage))))
+
+        summary_csv_path = os.path.join(rc_results_folder, "rc_filter_time_constants_summary.csv")
+
+        self.datastore["rc_filter_model"] = {"results_folder": rc_results_folder, "summary_csv": summary_csv_path, "curve_points": curve_points, "curve_time_multiplier": time_multiplier, "open_load": {}, "termination_10k": {}}
+
+        summary_rows = []
+        load_cases = [{"case_name": "open_load", "load_label": "open", "load_ohm": None, "source_voltage": open_source_voltage}, {"case_name": "termination_10k", "load_label": f"{termination_ohm} ohm", "load_ohm": termination_ohm, "source_voltage": term_source_voltage}]
+        transitions = ["step_on", "step_off"]
+
+        for hv_ch in range(8):
+            r_top, r_bottom, c_top, c_bottom, bank = self._get_rc_filter_components(hv_ch)
+
+            for load_case in load_cases:
+                case_name = load_case["case_name"]
+                load_label = load_case["load_label"]
+                load_ohm = load_case["load_ohm"]
+                source_voltage = load_case["source_voltage"]
+
+                rc_result = self._two_pole_rc_time_constants(r_top=r_top, r_bottom=r_bottom, c_top=c_top, c_bottom=c_bottom, load_ohm=load_ohm)
+                rc_result["load"] = load_label
+                rc_result["component_bank"] = bank
+                rc_result["r_top_ohm"] = r_top
+                rc_result["r_bottom_ohm"] = r_bottom
+                rc_result["c_top_f"] = c_top
+                rc_result["c_bottom_f"] = c_bottom
+                rc_result["source_voltage_v"] = source_voltage
+                rc_result["load_ohm"] = "open" if load_ohm is None else load_ohm
+
+                for transition in transitions:
+                    curve_data = self._two_pole_rc_step_curve(r_top=r_top, r_bottom=r_bottom, c_top=c_top, c_bottom=c_bottom, source_voltage=source_voltage, load_ohm=load_ohm, n_points=curve_points, time_multiplier=time_multiplier, transition=transition)
+                    file_stem = f"ch{hv_ch}_{case_name}_{transition}"
+                    curve_csv_path = os.path.join(rc_results_folder, f"{file_stem}_curve.csv")
+                    plot_path = os.path.join(rc_results_folder, f"{file_stem}_voltage_current.png")
+                    plot_title = f"RC Filter Model - Ch {hv_ch}, {load_label}, {transition.replace('_', ' ')}"
+
+                    self._save_rc_curve_csv(curve_data, curve_csv_path)
+                    self._save_rc_curve_plot(curve_data, plot_path, plot_title)
+
+                    rc_result[f"{transition}_curve_csv"] = curve_csv_path
+                    rc_result[f"{transition}_plot_png"] = plot_path
+
+                    summary_rows.append([hv_ch, case_name, transition, bank, r_top, r_bottom, c_top, c_bottom, source_voltage, "open" if load_ohm is None else load_ohm, rc_result["tau_fast_s"], rc_result["tau_slow_s"], rc_result["dominant_tau_s"], rc_result["settling_5tau_s"], rc_result["pole_fast_1_per_s"], rc_result["pole_slow_1_per_s"], curve_csv_path, plot_path])
+
+                self.datastore["rc_filter_model"][case_name][hv_ch] = rc_result
+
+        with open(summary_csv_path, mode="w", newline="") as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(["HV Channel", "Load Case", "Transition", "Component Bank", "R Top [Ohm]", "R Bottom [Ohm]", "C Top [F]", "C Bottom [F]", "Source Voltage [V]", "Load Resistance [Ohm]", "Tau Fast [s]", "Tau Slow [s]", "Dominant Tau [s]", "5 Tau Settling Time [s]", "Pole Fast [1/s]", "Pole Slow [1/s]", "Curve CSV Path", "Plot PNG Path"])
+            writer.writerows(summary_rows)
+
+        print(f"{self.prefix} --> RC filter model calculated before all hardware tests")
+        print(f"{self.prefix} --> RC filter model results folder: {rc_results_folder}")
+        print(f"{self.prefix} --> RC filter constants summary CSV: {summary_csv_path}")
+
+    # ------------------------------------------------------------------------------------------------------
     def beep_sequence(self):
         #First beep is always longer for some reason
         self.r0.beep()
