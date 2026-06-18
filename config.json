@@ -53,6 +53,25 @@
 "pcb_ch_7_pos": 7,
 "pcb_ch_7_neg": 15,
 
+"rc_filter_ch0_3_r_ohm": 49900,
+"rc_filter_ch0_3_c_f": 0.03e-6,
+"rc_filter_ch0_3_r_tolerance_percent": 1.0,
+"rc_filter_ch0_3_c_tolerance_percent": 10.0,
+
+"rc_filter_ch4_7_r_ohm": 24000,
+"rc_filter_ch4_7_c_f": 0.1e-6,
+"rc_filter_ch4_7_r_tolerance_percent": 5.0,
+"rc_filter_ch4_7_c_tolerance_percent": 10.0,
+
+"rc_filter_termination_ohm": 10000,
+"rc_filter_termination_tolerance_percent": 5.0,
+
+"rc_filter_open_model_voltage": 1500,
+"rc_filter_term_model_voltage": 20,
+"rc_filter_summary_signal_keys": ["voltage", "current"],
+
+"rc_filter_curve_points": 500,
+"rc_filter_curve_time_multiplier": 5.0,
 
 "caenR8033DM": "169.254.12.34",
 "caenR8033DM_driver": "libcaenhvwrapper.so.6.6",
