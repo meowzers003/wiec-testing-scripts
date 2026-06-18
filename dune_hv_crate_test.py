@@ -186,8 +186,19 @@ class LDOmeasure:
             self.ws.cell(row=2, column=1, value="Test Name").style = top_style
             self.ws.cell(row=2, column=2, value="Date").style = top_style
             self.ws.cell(row=2, column=3, value="Time").style = top_style
-            self.ws.cell(row = 1, column = 4, value="Fan Test - V/I for power supplying all 4 fans, RD signal outputs").style = top_style
-            self.ws.merge_cells(start_row=1, start_column=4, end_row=1, end_column=self.tc_res_first_col-1)
+            
+            self.ws.cell(
+                row=1,
+                column=4,
+                value="Fan Test - V/I for power supplying all 4 fans, RD signal outputs"
+            ).style = top_style
+
+            self.ws.merge_cells(
+                start_row=1,
+                start_column=4,
+                end_row=1,
+                end_column=self.fan_pwm_first_col - 1
+            )
             
             self.ws.cell(row=2, column=4, value="Supply Voltage").style = top_style
             self.ws.cell(row=2, column=5, value="Supply Current").style = top_style
