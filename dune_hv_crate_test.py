@@ -234,7 +234,7 @@ class LDOmeasure:
             self.ws.cell(row=1, column=self.tc_res_first_col, value="Heater Test - Results for each heating element and temperature rise after heating time").style = top_style
             self.ws.merge_cells(start_row=1, start_column=self.tc_res_first_col, end_row=1, end_column=self.hv_res_first_col-1)
 
-            self.ws.cell(row=1, column=self.hv_res_first_col, value="HV Test - Results for each configuration. Resistance in units shown, time constant is tau (seconds) in a*e^(-tau * t)+c ").style = top_style
+            self.ws.cell(row=1, column=self.hv_res_first_col, value="HV Test - Results for each configuration. Resistance in units shown, Setup Time k (seconds) in a*e^(-b * t)+c where k = 1/b ").style = top_style
             self.ws.merge_cells(start_row=1, start_column=self.hv_res_first_col, end_row=1, end_column=self.hv_res_first_col+3+(7*self.hv_cols))
             for i in range(8):
                 self.ws.cell(row=2, column=self.hv_res_first_col+(i*self.hv_cols), value=f"Ch{i}+ Open Res").style = top_style
@@ -474,7 +474,7 @@ class LDOmeasure:
         #### all units for voltage in Volts here
         # ---- data storage lists
         # dictionaries where key = specific member (aka fan), value = y-axis variable (osc freq)
-        num_fans = self.json_data['keysight970a_fan_num'] 
+        num_fans = int(self.json_data['keysight970a_fan_num'] )
         fan_signals = {i: [] for i in range(1, num_fans + 1)} 
         prog_voltage = [] # program defined input fan voltage 
         read_voltage = [] # measured input fan voltage 
@@ -783,17 +783,17 @@ class LDOmeasure:
                 j_on = j + "_on_fit"
                 j_off = j + "_off_fit"
                 if ((float(hv_results[i][j_on][0][1]) < self.json_data["hv_tau_max"]) and (float(hv_results[i][j_on][0][1]) > self.json_data["hv_tau_min"])):
-                    self.ws.cell(row=self.row, column=self.hv_res_first_col+1+(i*self.hv_cols)+(num*3), value=round(float(hv_results[i][j_on][0][1]), self.rounding_factor))
+                    self.ws.cell(row=self.row, column=self.hv_res_first_col+1+(i*self.hv_cols)+(num*3), value= round(1.0 / float(hv_results[i][j_on][0][1]), self.rounding_factor))
                     self.datastore['Tests'][f'hv_on_fit_test_ch{i}_{j_on}'] = "Pass"
                 else:
-                    self.ws.cell(row=self.row, column=self.hv_res_first_col+1+(i*self.hv_cols)+(num*3), value=round(float(hv_results[i][j_on][0][1]), self.rounding_factor)).style = "fail"
+                    self.ws.cell(row=self.row, column=self.hv_res_first_col+1+(i*self.hv_cols)+(num*3), value = round( 1.0 /float(hv_results[i][j_on][0][1]), self.rounding_factor)).style = "fail"
                     self.datastore['Tests'][f'hv_on_fit_test_ch{i}_{j_on}'] = "Fail"
                     self.hv_test_result = False
                 if ((float(hv_results[i][j_off][0][1]) < self.json_data["hv_tau_max"]) and (float(hv_results[i][j_off][0][1]) > self.json_data["hv_tau_min"])):
-                    self.ws.cell(row=self.row, column=self.hv_res_first_col+2+(i*self.hv_cols)+(num*3), value=round(float(hv_results[i][j_off][0][1]), self.rounding_factor))
+                    self.ws.cell(row=self.row, column=self.hv_res_first_col+2+(i*self.hv_cols)+(num*3), value=round(1.0 / float(hv_results[i][j_off][0][1]), self.rounding_factor))
                     self.datastore['Tests'][f'hv_off_fit_test_ch{i}_{j_off}'] = "Pass"
                 else:
-                    self.ws.cell(row=self.row, column=self.hv_res_first_col+2+(i*self.hv_cols)+(num*3), value=round(float(hv_results[i][j_off][0][1]), self.rounding_factor)).style = "fail"
+                    self.ws.cell(row=self.row, column=self.hv_res_first_col+2+(i*self.hv_cols)+(num*3), value=round(1.0 / float(hv_results[i][j_off][0][1]), self.rounding_factor)).style = "fail"
                     self.datastore['Tests'][f'hv_off_fit_test_ch{i}_{j_off}'] = "Fail"
                     self.hv_test_result = False
 
@@ -1231,7 +1231,7 @@ class LDOmeasure:
         self.format_plot(ax2)
 
         if fit:
-            textstr = r'$\tau=%.4f$' % (fit)
+            textstr = r'$\k=%.4f$' % (fit)
             props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
             ax.text(0.75, 0.75, textstr, transform=ax.transAxes, fontsize=24,
             verticalalignment='top', bbox=props)
