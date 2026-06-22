@@ -144,11 +144,19 @@ class LDOmeasure:
         # New Fan PWM sweep columns are inserted right after Fan RD results.
         self.fan_pwm_first_col = self.fan_rd_first_col + 6
         self.fan_pwm_num_fans = int(self.json_data['keysight970a_fan_num'])
-        self.fan_pwm_cols = 3 + self.fan_pwm_num_fans
+
+        # One-row Fan PWM format:
+        # For every fan, for every programmed sweep voltage, store:
+        #   1) Supply Voltage [V]
+        #   2) Read Voltage [V]
+        #   3) Read Current [A]
+        #   4) Oscillation Frequency [Hz]
+        self.fan_pwm_sweep_points = self.get_fan_pwm_sweep_points()
+        self.fan_pwm_cols = self.fan_pwm_num_fans * len(self.fan_pwm_sweep_points) * 4
 
         # Shift Heater and HV sections to the right to make room for Fan PWM data.
         self.tc_res_first_col = self.fan_pwm_first_col + self.fan_pwm_cols
-        self.hv_res_first_col = self.tc_res_first_col + 8     
+        self.hv_res_first_col = self.tc_res_first_col + 8
 
         if (os.path.isfile(self.path_to_spreadsheet)):
             self.wb = openpyxl.load_workbook(filename = self.path_to_spreadsheet)
@@ -264,46 +272,137 @@ class LDOmeasure:
         self.ws.cell(row=self.row, column=2, value=datetime.today().strftime('%m/%d/%Y'))
         self.ws.cell(row=self.row, column=3, value=datetime.today().strftime('%I:%M:%S %p'))
         self.wb.save(self.path_to_spreadsheet)
-    def get_fan_pwm_headers(self):
-        csv_headers = [
-            "Programmed Fan Voltage [V]",
-            "Read Fan Voltage [V]",
-            "Read Fan Current [A]"
-        ]
+
+    def get_fan_pwm_sweep_points(self):
+        """
+        Builds the programmed fan-voltage sweep points from config.json.
+
+        This is used both when creating spreadsheet headers and when actually
+        running fan_test_sweep(), so the header voltage labels match the real
+        sweep voltage points.
+        """
+
+        steps = int(self.json_data['rigol832a_fan_voltage_number_of_data_samples'])
+        fan_voltage_max = self.json_data['rigol832a_fan_voltage_max']
+        fan_voltage_min = self.json_data['rigol832a_fan_voltage_min']
+
+        # Keep spreadsheet construction from crashing before fan_test_sweep()
+        # gets a chance to print its config error message.
+        if steps < 2:
+            steps = 2
+
+        prog_voltage = []
+
+        for i in range(steps):
+            voltage = fan_voltage_min + (fan_voltage_max - fan_voltage_min) * i / (steps - 1)
+            prog_voltage.append(round(voltage, 3))
+
+        # force the last sweep point to be fan_voltage_max
+        prog_voltage[-1] = fan_voltage_max
+
+        return prog_voltage
+
+
+    def format_fan_pwm_voltage_label(self, voltage):
+        """
+        Makes cleaner header text:
+        12.0 -> 12
+        11.5 -> 11.5
+        """
+
+        try:
+            return f"{float(voltage):g}"
+        except:
+            return str(voltage)
+
+
+    def get_fan_pwm_headers(self, prog_voltage=None):
+        """
+        Builds one-row Fan PWM headers.
+
+        Header ordering:
+            Fan #1, all voltage sweep points
+            Fan #2, all voltage sweep points
+            Fan #3, all voltage sweep points
+            ...
+        """
+
+        if prog_voltage is None:
+            prog_voltage = self.get_fan_pwm_sweep_points()
+
+        csv_headers = []
 
         for fan in range(1, self.fan_pwm_num_fans + 1):
-            csv_headers.append(
-                "Fan #" + str(fan) + " - Oscillation Frequency [Hz]"
-            )
+            for supply_voltage in prog_voltage:
+                voltage_label = self.format_fan_pwm_voltage_label(supply_voltage)
+
+                csv_headers.append(
+                    f"Fan #{fan} - {voltage_label} V : Supply Voltage [V]"
+                )
+                csv_headers.append(
+                    f"Fan #{fan} - {voltage_label} V : Read Voltage [V]"
+                )
+                csv_headers.append(
+                    f"Fan #{fan} - {voltage_label} V : Read Current [A]"
+                )
+                csv_headers.append(
+                    f"Fan #{fan} - {voltage_label} V : Oscillation Frequency [Hz]"
+                )
 
         return csv_headers
 
 
     def ensure_fan_pwm_columns(self):
         """
-        Ensures the existing output_file has Fan PWM columns inserted between
-        fan_test() results and Heater Test results.
+        Ensures the existing output_file has the one-row Fan PWM columns inserted
+        between fan_test() results and Heater Test results.
 
-        If the workbook was created before Fan PWM columns existed, this shifts
-        the pre-existing Heater/HV columns to the right. Old rows will have blank
-        Fan PWM entries.
+        If an older Fan PWM block already exists in the old 2D format, this
+        removes that old Fan PWM block and replaces it with the new one-row
+        format.
         """
 
         fan_pwm_headers = self.get_fan_pwm_headers()
 
-        # Check whether the Fan PWM section already exists.
-        already_has_fan_pwm = (
+        # Locate the current Heater Test section in the existing spreadsheet.
+        # This tells us where the current Fan PWM block ends.
+        heater_col = None
+
+        for col in range(1, self.ws.max_column + 1):
+            value = self.ws.cell(row=1, column=col).value
+
+            if isinstance(value, str) and value.startswith("Heater Test"):
+                heater_col = col
+                break
+
+        expected_heater_col = self.fan_pwm_first_col + self.fan_pwm_cols
+
+        already_has_new_fan_pwm = (
             self.ws.cell(row=2, column=self.fan_pwm_first_col).value
             == fan_pwm_headers[0]
         )
 
+        heater_is_in_expected_place = (
+            heater_col == expected_heater_col
+        )
+
         # Rebuild row-1 merged section headers safely.
-        # This avoids stale merged-cell ranges after inserting columns.
+        # This avoids stale merged-cell ranges after inserting/deleting columns.
         for merged_range in list(self.ws.merged_cells.ranges):
             if merged_range.min_row == 1 and merged_range.max_row == 1:
                 self.ws.unmerge_cells(str(merged_range))
 
-        if not already_has_fan_pwm:
+        # If the old 2D Fan PWM block exists, or if the Fan PWM section is
+        # missing, rebuild the whole Fan PWM block.
+        if not (already_has_new_fan_pwm and heater_is_in_expected_place):
+
+            # Delete whatever currently sits between Fan RD and Heater Test.
+            # This is usually the old Fan PWM block.
+            if heater_col is not None and heater_col > self.fan_pwm_first_col:
+                cols_to_delete = heater_col - self.fan_pwm_first_col
+                self.ws.delete_cols(self.fan_pwm_first_col, cols_to_delete)
+
+            # Insert the new one-row Fan PWM columns.
             self.ws.insert_cols(self.fan_pwm_first_col, self.fan_pwm_cols)
 
         # Re-write top merged section headers using the new layout.
@@ -323,7 +422,7 @@ class LDOmeasure:
         self.ws.cell(
             row=1,
             column=self.fan_pwm_first_col,
-            value="Fan PWM Sweep - Programmed/read fan voltage, current, and oscillation frequency"
+            value="Fan PWM Sweep - One-row programmed/read voltage, current, and oscillation frequency"
         ).style = "top"
 
         self.ws.merge_cells(
@@ -349,7 +448,7 @@ class LDOmeasure:
         self.ws.cell(
             row=1,
             column=self.hv_res_first_col,
-            value="HV Test - Results for each configuration. Resistance in units shown, time constant is tau (seconds) in a*e^(-tau * t)+c "
+            value="HV Test - Results for each configuration. Resistance in units shown, Setup Time k (seconds) in a*e^(-b * t)+c where k = 1/b "
         ).style = "top"
 
         self.ws.merge_cells(
@@ -359,7 +458,7 @@ class LDOmeasure:
             end_column=self.hv_res_first_col + 3 + (7 * self.hv_cols)
         )
 
-        # Re-write Fan PWM column headers.
+        # Re-write Fan PWM one-row column headers.
         for col_offset, header in enumerate(fan_pwm_headers):
             self.ws.cell(
                 row=2,
@@ -367,35 +466,29 @@ class LDOmeasure:
                 value=header
             ).style = "top"
 
-
-    def write_fan_pwm_results_to_spreadsheet(self, fan_pwm_rows):
+    def write_fan_pwm_results_to_spreadsheet(self, fan_pwm_headers, fan_pwm_row):
         """
-        Writes Fan PWM sweep data into output_file.
+        Writes Fan PWM sweep data into output_file as one wide row.
 
-        The first PWM sweep point is written on self.row, which is the same row
-        as the nominal fan_test(), heater_test(), and hv_test() summary data.
-
-        Additional sweep points are written on the following rows, only in the
-        Fan PWM-specific columns.
+        The Fan PWM data is written only on self.row, the same row as the main
+        test summary. No additional spreadsheet rows are used for sweep points.
         """
 
         # Make sure headers exist before writing data.
-        for col_offset, header in enumerate(self.get_fan_pwm_headers()):
+        for col_offset, header in enumerate(fan_pwm_headers):
             self.ws.cell(
                 row=2,
                 column=self.fan_pwm_first_col + col_offset,
                 value=header
             ).style = "top"
 
-        for row_offset, fan_pwm_row in enumerate(fan_pwm_rows):
-            excel_row = self.row + row_offset
-
-            for col_offset, value in enumerate(fan_pwm_row):
-                self.ws.cell(
-                    row=excel_row,
-                    column=self.fan_pwm_first_col + col_offset,
-                    value=value
-                )
+        # Write the entire Fan PWM sweep into one row.
+        for col_offset, value in enumerate(fan_pwm_row):
+            self.ws.cell(
+                row=self.row,
+                column=self.fan_pwm_first_col + col_offset,
+                value=value
+            )
 
         self.wb.save(self.path_to_spreadsheet)
 
@@ -504,13 +597,8 @@ class LDOmeasure:
             return None # end func execution early upon error
         
      
-        # hardcode the sweep points' voltage values to ensure that max voltage value is max voltage specified if it isnt reached 
-        for i in range(steps):
-            voltage = fan_voltage_min + (fan_voltage_max - fan_voltage_min) * i / (steps - 1) # calculate voltage sweep point 
-            prog_voltage.append(round(voltage, 3)) 
-    
-        # force the last sweep point to be fan_voltage max
-        prog_voltage[-1] = fan_voltage_max # replace the last element with the specified max voltage input 
+        # build the exact same sweep points used for Fan PWM spreadsheet headers
+        prog_voltage = self.get_fan_pwm_sweep_points()
         print(f"{self.prefix} --> Fan Voltage Sweep Points in Volts : {prog_voltage}")
         
         
@@ -572,27 +660,27 @@ class LDOmeasure:
         plt.savefig(save_path, bbox_inches="tight")
         plt.close()
 
-        # build CSV-formatted Fan PWM table
-        csv_headers = self.get_fan_pwm_headers()
-        fan_pwm_rows = []
+        # build one-row Fan PWM table
+        csv_headers = self.get_fan_pwm_headers(prog_voltage)
+        fan_pwm_row = []
 
-        for i in range(len(prog_voltage)):
-            csv_row = [
-                prog_voltage[i],
-                read_voltage[i],
-                read_current[i]
-            ]
+        # Column ordering:
+        #   Fan #1, all voltage sweep points
+        #   Fan #2, all voltage sweep points
+        #   Fan #3, all voltage sweep points
+        #   ...
+        for fan in range(1, num_fans + 1):
+            for i in range(len(prog_voltage)):
+                fan_pwm_row.append(prog_voltage[i])          # Supply Voltage [V]
+                fan_pwm_row.append(read_voltage[i])          # Read Voltage [V]
+                fan_pwm_row.append(read_current[i])          # Read Current [A]
+                fan_pwm_row.append(fan_signals[fan][i])      # Oscillation Frequency [Hz]
 
-            for fan in range(1, num_fans + 1):
-                csv_row.append(fan_signals[fan][i])
+        # save Fan PWM one-row data into the existing Excel output_file
+        self.write_fan_pwm_results_to_spreadsheet(csv_headers, fan_pwm_row)
 
-            fan_pwm_rows.append(csv_row)
-
-        # save Fan PWM table into the existing Excel output_file
-        # headers go in row 2; data goes in the current test row and rows below
-        self.write_fan_pwm_results_to_spreadsheet(fan_pwm_rows)
-
-        # still save standalone CSV copy in the fan PWM results folder
+        # still save standalone CSV copy in the fan PWM results folder,
+        # now also in one-row format
         csv_name = "fan_pwm_results.csv"
         csv_save_path = os.path.join(fan_results_folder, csv_name)
 
@@ -600,9 +688,9 @@ class LDOmeasure:
             csv_writer = csv.writer(csv_file)
 
             csv_writer.writerow(csv_headers)
-            csv_writer.writerows(fan_pwm_rows)
+            csv_writer.writerow(fan_pwm_row)
 
-        print(f"{self.prefix} --> Fan PWM plots, CSV data, and Excel output_file data saved")
+        print(f"{self.prefix} --> Fan PWM plots, one-row CSV data, and Excel output_file data saved")
         print(f"{self.prefix} --> Fan PWM results folder: {fan_results_folder}")
         print(f"{self.prefix} --> Excel output_file: {self.path_to_spreadsheet}")
 #---------------------------------------- End of Fan PWM measurement ----------------------		
