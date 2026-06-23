@@ -870,18 +870,27 @@ class LDOmeasure:
             for num,j in enumerate(["pos_open", "pos_term", "neg_open", "neg_term"]):
                 j_on = j + "_on_fit"
                 j_off = j + "_off_fit"
+
+                # handle div by zero error 
+                val_on = float(hv_results[i][j_on][0][1])
+                val_off = float(hv_results[i][j_off][0][1])
+                if (val_on != 0.0):
+                    val_on = 1.0 / val_on
+                if (val_off != 0.0):
+                    val_off = 1.0 / val_off
+
                 if ((float(hv_results[i][j_on][0][1]) < self.json_data["hv_tau_max"]) and (float(hv_results[i][j_on][0][1]) > self.json_data["hv_tau_min"])):
-                    self.ws.cell(row=self.row, column=self.hv_res_first_col+1+(i*self.hv_cols)+(num*3), value= round(1.0 / float(hv_results[i][j_on][0][1]), self.rounding_factor))
+                    self.ws.cell(row=self.row, column=self.hv_res_first_col+1+(i*self.hv_cols)+(num*3), value= round(val_on, self.rounding_factor))
                     self.datastore['Tests'][f'hv_on_fit_test_ch{i}_{j_on}'] = "Pass"
                 else:
-                    self.ws.cell(row=self.row, column=self.hv_res_first_col+1+(i*self.hv_cols)+(num*3), value = round( 1.0 /float(hv_results[i][j_on][0][1]), self.rounding_factor)).style = "fail"
+                    self.ws.cell(row=self.row, column=self.hv_res_first_col+1+(i*self.hv_cols)+(num*3), value = round( val_on, self.rounding_factor)).style = "fail"
                     self.datastore['Tests'][f'hv_on_fit_test_ch{i}_{j_on}'] = "Fail"
                     self.hv_test_result = False
                 if ((float(hv_results[i][j_off][0][1]) < self.json_data["hv_tau_max"]) and (float(hv_results[i][j_off][0][1]) > self.json_data["hv_tau_min"])):
-                    self.ws.cell(row=self.row, column=self.hv_res_first_col+2+(i*self.hv_cols)+(num*3), value=round(1.0 / float(hv_results[i][j_off][0][1]), self.rounding_factor))
+                    self.ws.cell(row=self.row, column=self.hv_res_first_col+2+(i*self.hv_cols)+(num*3), value=round(val_off, self.rounding_factor))
                     self.datastore['Tests'][f'hv_off_fit_test_ch{i}_{j_off}'] = "Pass"
                 else:
-                    self.ws.cell(row=self.row, column=self.hv_res_first_col+2+(i*self.hv_cols)+(num*3), value=round(1.0 / float(hv_results[i][j_off][0][1]), self.rounding_factor)).style = "fail"
+                    self.ws.cell(row=self.row, column=self.hv_res_first_col+2+(i*self.hv_cols)+(num*3), value=round( val_off, self.rounding_factor)).style = "fail"
                     self.datastore['Tests'][f'hv_off_fit_test_ch{i}_{j_off}'] = "Fail"
                     self.hv_test_result = False
 
