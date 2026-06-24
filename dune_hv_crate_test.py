@@ -85,9 +85,9 @@ class LDOmeasure:
 
             # self.hv_test() #add'l specific exceptions are handled within 
 
-            self.initialize_ptc() # turn on PTC power supply and fans
+            self.initialize_wiec() # turn on PTC power supply and fans
             # ptc test functions and read/write to spreadsheet function calls 
-            self.shutdown_ptc()
+            self.shutdown_wiec()
             
         except:
             print("Detected exception, powering off all devices first.")
@@ -566,7 +566,7 @@ class LDOmeasure:
         return None
 		# return fan_read_signal, fanread_voltage, fanread_current # return these for voltage sweep fan func plot
 #----------------------------------------- PTC Power Control and Measurement --------------------------------------
-    def initialize_ptc(self):
+    def initialize_wiec(self):
         self.emergency_shutoff() # turn off everything first 
 
         # turn on all fans 
@@ -604,7 +604,7 @@ class LDOmeasure:
         print(readback)
 
         
-    def shutdown_ptc(self):
+    def shutdown_wiec(self):
         # turn off PL506 channel for PTC power supply
         self.pl506 = PL506(ip=self.json_data["PL506_IP_ADDR"])
         self.pl506.channel_off(channel=self.json_data["PL506_channel"])
