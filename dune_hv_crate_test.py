@@ -74,14 +74,6 @@ class LDOmeasure:
         
 
         try:
-            self.emergency_shutoff()	
-            
-            self.initialize_ptc()
-            # self.shutdown_ptc()
-            
-            # self.emergency_shutoff()	
-            
-
             # self.fan_test()
             # self.wb.save(self.path_to_spreadsheet)
 
@@ -92,6 +84,10 @@ class LDOmeasure:
             # self.wb.save(self.path_to_spreadsheet)
 
             # self.hv_test() #add'l specific exceptions are handled within 
+
+            self.initialize_ptc() # turn on PTC power supply and fans
+            # ptc test functions and read/write to spreadsheet function calls 
+            self.shutdown_ptc()
             
         except:
             print("Detected exception, powering off all devices first.")
