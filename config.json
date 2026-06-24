@@ -6,10 +6,18 @@
 "sheet_name": "Test Results",
 "rounding_factor": 5,
 
+
 "PL506_IP_ADDR": "169.254.12.34",
+"PL506_settle_seconds": 5.0,
+"PL506_voltage_max": 50.0,
+"PL506_sense_voltage": 48.0,
+"PL506_current_limit": 8.0,
+"PL506_channel": 0,
 
+"PTC_fan_voltage": 24.0,
+"PTC_fan_current": 1.0,
 
-
+"PL506_current_max": 12.5, 
 
 
 "hv_stability_wait": 5.0,

@@ -9,8 +9,8 @@ rb = psu.safe_turn_on_channel(
     channel=channel,
     voltage_v=1.0,
     current_limit_a=0.1,
-    max_voltage_v=30.0,
-    max_current_a=5.0,
+    max_voltage_v=50.0,
+    max_current_a=12.5,
     settle_s=1.0,
 )
 

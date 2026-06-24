@@ -73,18 +73,19 @@ class LDOmeasure:
         
 
         try:
-            self.fan_test()
-            self.wb.save(self.path_to_spreadsheet)
+            self.initialize_ptc()
+            self.shutdown_ptc()
 
-            self.fan_test_sweep() # trigger PWN measurement fan test
-            self.wb.save(self.path_to_spreadsheet)
+            # self.fan_test()
+            # self.wb.save(self.path_to_spreadsheet)
 
-            self.heater_test()
-            self.wb.save(self.path_to_spreadsheet)
+            # self.fan_test_sweep() # trigger PWN measurement fan test
+            # self.wb.save(self.path_to_spreadsheet)
 
-        
+            # self.heater_test()
+            # self.wb.save(self.path_to_spreadsheet)
 
-            self.hv_test() #add'l specific exceptions are handled within 
+            # self.hv_test() #add'l specific exceptions are handled within 
             
         except:
             print("Detected exception, powering off all devices first.")
@@ -562,6 +563,43 @@ class LDOmeasure:
 
         return None
 		# return fan_read_signal, fanread_voltage, fanread_current # return these for voltage sweep fan func plot
+#----------------------------------------- PTC Power Control and Measurement --------------------------------------
+    def initialize_ptc(self):
+        self.emergency_shutoff() # turn off everything first 
+
+        # turn on all fans 
+        self.json_data['rigol832a_fan_voltage'] = self.json_data['PTC_fan_voltage'] 
+        self.json_data['rigol832a_fan_current'] = self.json_data['PTC_fan_current']
+        self.r0.setup_fan() # apply new settings to fan
+        self.r0.power("ON", "fan") # turn on fan power supply
+
+
+        # turn on PL506 channel for PTC power supply
+        self.pl506 = PL506(ip=self.json_data["PL506_IP_ADDR"])
+        readback = self.pl506.safe_turn_on_channel(channel=self.json_data["PL506_channel"],
+                                                max_voltage_v=self.json_data["PL506_voltage_max"],
+                                                voltage_v=self.json_data["PL506_sense_voltage"],
+                                                max_current_a=self.json_data["PL506_current_max"],
+                                                current_limit_a=self.json_data["PL506_current_limit"],
+                                                settle_s=self.json_data["PL506_settle_seconds"])
+        
+        print(f"{self.prefix} --> PL506 channel {self.json_data['PL506_channel']} turned on with readback voltage {readback[0]} V and current {readback[1]} A")
+
+        
+    def shutdown_ptc(self):
+        # turn off PL506 channel for PTC power supply
+        self.pl506 = PL506(ip=self.json_data["PL506_IP_ADDR"])
+        self.pl506.channel_off(channel=self.json_data["PL506_channel"])
+        self.pl506.main_off()
+        print(f"{self.prefix} --> PL506 channel {self.json_data['PL506_channel']} turned off")
+        # turn off all fans 
+        self.r0.power("OFF", "fan") # turn off fan power supply 
+
+
+
+#----------------------------------------------------------------------------------------------------------------------------
+
+
 
 #---------------------------------------- Start of Fan PWM measurement ----------------------			
     def fan_test_sweep(self):
@@ -661,6 +699,23 @@ class LDOmeasure:
         plt.savefig(save_path, bbox_inches="tight")
         plt.close()
 
+        # plot data: programmed input voltage vs. read input current
+        plt.figure()
+
+        plt.plot(prog_voltage, read_current, marker='o')
+
+        plt.title( "Programmed Fan Voltage vs. Read Fan Current", fontsize=14)
+        plt.xlabel("Programmed Fan Voltage [V]", fontsize=12)
+        plt.ylabel("Read Fan Current [A]", fontsize=12)
+        plt.grid(True)
+
+        # store png plot in the folder
+        plot_name = "programmed_voltage_vs_read_current.png"
+        save_path = os.path.join(fan_results_folder, plot_name)
+        plt.savefig(save_path, bbox_inches="tight")
+        plt.close()
+
+
         # build one-row Fan PWM table
         csv_headers = self.get_fan_pwm_headers(prog_voltage)
         fan_pwm_row = []
@@ -695,8 +750,10 @@ class LDOmeasure:
         print(f"{self.prefix} --> Fan PWM results folder: {fan_results_folder}")
         print(f"{self.prefix} --> Excel output_file: {self.path_to_spreadsheet}")
 #---------------------------------------- End of Fan PWM measurement ----------------------		
-	    
-			
+
+        		
+
+#---------------------------------------- Start of Heater Test ----------------------
     def heater_test(self):
         #Heater test
         #First measure resistance of heating element with no power connected
@@ -762,6 +819,8 @@ class LDOmeasure:
         self.datastore['temp2'] = temp2
         self.datastore['temp_rise'] = temp_rise
 
+
+#------------------------- HIGH VOLTAGE TESTS ----------------------   	
     def hv_test(self):
         #HV Leakage Test
         hv_results = {}
@@ -1183,7 +1242,7 @@ class LDOmeasure:
             ###################            
 
 
-            
+#------------------------------CONNECTIONS------------------------------            
     def emergency_shutoff(self):
         self.c.turn_off(list(range(16)), emergency=True) #Turn off HV channels
         #input("pause here")
@@ -1191,6 +1250,10 @@ class LDOmeasure:
         self.r0.power("OFF", "heat_switch")
         self.r0.power("OFF", "fan")
         self.r1.power("OFF", "fanread")
+        # add PL506 shut off 
+        self.pl506.channel_off(self.json_data["PL506_channel"])
+        self.pl506.main_off()
+
         self.k.set_relay(0, 0) #Probably not necessary    
 
     def reset_pyvisa_connections(self):	
@@ -1208,7 +1271,10 @@ class LDOmeasure:
             	
         self.k.keysight.close()
         self.k = Keysight970A(self.rm, self.json_data)    
-    	
+#-------------------------------------------------------------
+
+
+#-------------------------HIGH VOLTAGE PLOTS ----------------------   	
     def record_hv_data(self, name, short_time=False):
         data = []
         cycle_start_time = time.time()
@@ -1360,6 +1426,10 @@ class LDOmeasure:
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%M:%S'))
         ax.tick_params(axis='x', labelsize=tick_size, colors='black')  # Set tick size and color here
         ax.tick_params(axis='y', labelsize=tick_size, colors='black')  # Set tick size and color here
+#---------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
 
     def beep_sequence(self):
         #First beep is always longer for some reason
