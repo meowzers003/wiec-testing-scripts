@@ -7,7 +7,7 @@
 "rounding_factor": 5,
 
 
-"PL506_IP_ADDR": "169.254.12.34",
+"PL506_IP_ADDR": "###.###.##.##",
 "PL506_settle_seconds": 5.0,
 "PL506_voltage_max": 50.0,
 "PL506_sense_voltage": 48.0,
