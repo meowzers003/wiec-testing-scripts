@@ -4,7 +4,13 @@
 "output_file": "DUNE_HV_Crate_Production_Test.xlsx",
 "relative": "True",
 "sheet_name": "Test Results",
-"rounding_factor": 2,
+"rounding_factor": 5,
+
+"PL506_IP_ADDR": "169.254.12.34",
+
+
+
+
 
 "hv_stability_wait": 5.0,
 "hv_termination_wait": 5.0,

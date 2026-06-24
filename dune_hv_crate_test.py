@@ -8,6 +8,7 @@ from datetime import datetime
 from keysight_daq970a import Keysight970A
 from rigol_dp832a import RigolDP832A
 from caen_r8033dm_wrapper import CAENR8033DM_WRAPPER
+from pl506 import PL506
 
 import csv
 from pathlib import Path
