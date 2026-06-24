@@ -570,13 +570,29 @@ class LDOmeasure:
         self.emergency_shutoff() # turn off everything first 
 
         # turn on all fans 
-        self.json_data['rigol832a_fan_voltage'] = self.json_data['PTC_fan_voltage'] 
-        self.json_data['rigol832a_fan_current'] = self.json_data['PTC_fan_current']
+        self.json_data['rigol832a_fan_voltage'] = self.json_data['WIEC_fan_voltage'] 
+        self.json_data['rigol832a_fan_current'] = self.json_data['WIEC_fan_current']
         self.r0.setup_fan() # apply new settings to fan
         self.r0.power("ON", "fan") # turn on fan power supply
+        self.r1.setup_fanread()
+        self.r1.power("ON", "fanread")
 
+        # check if every fan is on and oscillating at the correct frequency
+        fan_voltage = self.r0.get_voltage("fan")
+        fan_current = self.r0.get_current("fan")
+        fanread_voltage = self.r1.get_voltage("fanread")
+        fanread_current = self.r1.get_current("fanread")
+        fan_read_signal = self.k.measure_fan()
 
-        # turn on PL506 channel for PTC power supply
+        num_fans = int(self.json_data['keysight970a_fan_num'] )
+        for fan in range(1, num_fans + 1):
+            if (fan_read_signal[fan] < self.json_data["fan_osc_freq"]):
+                print(f"{self.prefix} --> CONFIG ERROR! Fan #{fan} is not oscillating at the correct frequency: {fan_read_signal[fan]} Hz")			
+                print(f"{self.prefix} --> Please check fan connections and restart test")	
+                self.emergency_shutoff() # turn off everything first
+                return None # end func execution early upon error
+
+        # turn on PL506 channel for PTC power supply since fan is confirmed to be working
         readback = self.pl506.safe_turn_on_channel(channel=self.json_data["PL506_channel"],
                                                 max_voltage_v=self.json_data["PL506_voltage_max"],
                                                 voltage_v=self.json_data["PL506_sense_voltage"],

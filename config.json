@@ -14,8 +14,8 @@
 "PL506_current_limit": 8.0,
 "PL506_channel": 0,
 
-"PTC_fan_voltage": 24.0,
-"PTC_fan_current": 1.0,
+"WIEC_fan_voltage": 24.0,
+"WIEC_fan_current": 2.0,
 
 "PL506_current_max": 12.5, 
 
@@ -34,6 +34,7 @@
 "fan_current_min": 0.85,
 "fan_read_max": 2.5,
 "fan_read_min": 1.1,
+"fan_osc_freq": 300,
 
 "heating_element_max": 20.0,
 "heating_element_min": 14.0,
