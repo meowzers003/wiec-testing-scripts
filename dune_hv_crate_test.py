@@ -35,8 +35,9 @@ class LDOmeasure:
         
         
         #Initialize all instruments first so that you don't waste time with input if something is not connected
-        self.c = CAENR8033DM_WRAPPER(self.json_data)
+        self.c = CAENR8033DM_WRAPPER(self.json_data)            
         self.k = Keysight970A(self.rm, self.json_data)
+        self.pl506 = PL506(ip=self.json_data["PL506_IP_ADDR"])
 
         #Since there are 2 Rigols, set them up here so they know what channels they have
         #And if the test sequence calls the wrong one, it'll throw an error
@@ -73,8 +74,13 @@ class LDOmeasure:
         
 
         try:
+            self.emergency_shutoff()	
+            
             self.initialize_ptc()
-            self.shutdown_ptc()
+            # self.shutdown_ptc()
+            
+            # self.emergency_shutoff()	
+            
 
             # self.fan_test()
             # self.wb.save(self.path_to_spreadsheet)
@@ -575,7 +581,6 @@ class LDOmeasure:
 
 
         # turn on PL506 channel for PTC power supply
-        self.pl506 = PL506(ip=self.json_data["PL506_IP_ADDR"])
         readback = self.pl506.safe_turn_on_channel(channel=self.json_data["PL506_channel"],
                                                 max_voltage_v=self.json_data["PL506_voltage_max"],
                                                 voltage_v=self.json_data["PL506_sense_voltage"],
@@ -583,7 +588,8 @@ class LDOmeasure:
                                                 current_limit_a=self.json_data["PL506_current_limit"],
                                                 settle_s=self.json_data["PL506_settle_seconds"])
         
-        print(f"{self.prefix} --> PL506 channel {self.json_data['PL506_channel']} turned on with readback voltage {readback[0]} V and current {readback[1]} A")
+        print(f"{self.prefix} --> PL506 channel {self.json_data['PL506_channel']} turned on with readback information:")
+        print(readback)
 
         
     def shutdown_ptc(self):
