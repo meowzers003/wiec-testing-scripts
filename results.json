@@ -5,6 +5,7 @@
 "wib_setup": "True",
 "ptc_setup": "True",
 "wiec_setup": "True",
+
 "continuity_tests": "True",
 
 "errors": "[]"

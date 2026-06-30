@@ -13,8 +13,6 @@ import keysight_daq970a as KEYSIGHT
 
 import dune_hv_crate_test as DUNE_HV_CRATE_TEST
 
-from dataclasses import dataclass
-
 # set up configurations
 json_data = None
 with open('config.json') as jsonfile:

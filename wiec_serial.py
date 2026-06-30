@@ -177,6 +177,10 @@ def run_petalinux_command(ser, command, timeout=10):
     return output
 
 
+# function to collect output response 
+
+
+
 def main():
     check_host_serial_device()
 
