@@ -1,5 +1,8 @@
 import json
 import traceback
+import subprocess
+import os
+import sys
 
 import dune_hv_crate_test as DUNE_HV_CRATE_TEST
 import wiec_ptc_power as WIEC_PTC_POWER
@@ -85,7 +88,7 @@ def main():
         {
             "name": "wib_serial.py",
             "key": "wib_serial",
-            "function": WIEC_SERIAL.run_wib_serial,
+            "function": WIEC_SERIAL.main,
         },
         {
             "name": "wib_setup.py",
