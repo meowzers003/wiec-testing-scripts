@@ -179,8 +179,52 @@ def run_petalinux_command(ser, command, timeout=10):
 
 
 # function to collect output response 
+def login(): # func to just login
+    check_host_serial_device()
+    ser = login_petalinux()
+    return ser
 
+def set_timing(ser, timing):
+    """
+    Sets the timing parameter on the PetaLinux shell.
+    """
+    print(f"Setting timing to {timing}...")
+    output = run_petalinux_command(ser, "python3 set_timing.py")
+    print(output)
 
+def set_date(ser, date_str):
+    """
+    Sets the date on the PetaLinux shell.
+    """
+    print(f"Setting date to {date_str}...")
+    output = run_petalinux_command(ser, f"sudo date -s '{date_str}'")
+    output += run_petalinux_command(ser, "date")
+    print(output)
+
+def power_wib(ser, wibs, power_state):
+    """
+    Powers on or off the specified WIB.
+    """
+    outputs = []
+    print(f"Setting power for WIB {wibs} to {power_state}...")
+    for wib in wibs:
+        output = run_petalinux_command(ser, f"python3 power_on_wib.py {wib} {power_state}")
+        print(output)
+        outputs.append(output)
+    return outputs 
+
+def sensors_addr(ser, wibs):
+    sensors_addr = []
+    for wib in wibs:
+        print(f"Getting sensor output for WIB {wib}...")
+        output = run_petalinux_command(ser, f"i2cset -y 2 0x7{wib} 0x0002")
+        output = run_petalinux_command(ser, f"i2cdetect -y -r 2")
+        print(output)
+        sensors_addr.append(output)
+    # output = run_petalinux_command(ser, f"python3 ecat_test1b.py logfile_willupdatetorealdatelater.txt")
+    # print(output)
+    return sensors_addr 
+    
 
 def main():
     check_host_serial_device()

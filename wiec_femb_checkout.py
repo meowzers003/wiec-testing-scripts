@@ -10,13 +10,19 @@ import time
 import csv
 from datetime import datetime
 from colorama import init, Fore, Style
+import json
 
-import cts_ssh_FEMB as cts
-import GUI.send_email as send_email
-import GUI.Rigol_DP800 as rigol
-import GUI.pop_window as pop
-from qc_utils import QC_Process
-from qc_results import analyze_test_results, display_qc_results
+from BNL_CE_WIB_SW_QC import cts_ssh_FEMB as cts
+
+from BNL_CE_WIB_SW_QC.GUI import send_email
+from BNL_CE_WIB_SW_QC.GUI import Rigol_DP800 as rigol
+from BNL_CE_WIB_SW_QC.GUI import pop_window as pop
+
+from BNL_CE_WIB_SW_QC.qc_utils import QC_Process
+from BNL_CE_WIB_SW_QC.qc_results import analyze_test_results, display_qc_results
+
+import wiec_qc 
+
 
 # Image paths for instruction popups
 IMG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'GUI', 'output_pngs')
@@ -30,6 +36,8 @@ SENDER_PASSWORD = "vvef tosp minf wwhf"
 CSV_FILE = './femb_info.csv'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INIT_SETUP_CSV = os.path.join(BASE_DIR, 'init_setup.csv')
+
+info_data = None
 
 
 def read_init_setup():
@@ -442,6 +450,11 @@ def main():
     init_config = read_init_setup()
 
     # Save configuration with all fields matching femb_info_implement.csv
+    info = wiec_qc.load_results()
+
+    tester_name = info.get("tester_name", "Unknown")
+    tester_email = info.get("tester_email", "Unknown")
+    femb_ids = info.get("femb_ids", ["0", "1", "2", "3"])
     save_config(tester_name, tester_email, femb_ids, init_config)
     inform = cts.read_csv_to_dict(CSV_FILE, 'RT')
 
@@ -454,27 +467,27 @@ def main():
         print_step(4, 5, "Running Checkout Test")
         data_path, report_path = run_checkout_test(inform, psu)
 
-        # Step 5: Generate results and send email
-        print_step(5, 6, "Generating Results and Sending Email")
+        # Step 5: Generate results 
+        print_step(5, 6, "Generating Results ")
         all_passed, summary_text, slot_results = generate_result_summary(inform, data_path, report_path)
-        send_result_email(tester_email, all_passed, summary_text, inform)
+        # send_result_email(tester_email, all_passed, summary_text, inform)
         print_status('info', "Turning OFF power supply...")
         psu.close()
-        # Show Page 9: Open cover for board removal
-        pop.show_image_popup(
-            title="Page 9: Review Result and Open Cover",
-            image_path=os.path.join(IMG_DIR, "9.png")
-        )
+        # # Show Page 9: Open cover for board removal
+        # pop.show_image_popup(
+        #     title="Page 9: Review Result and Open Cover",
+        #     image_path=os.path.join(IMG_DIR, "9.png")
+        # )
 
-        # Step 6: Board removal with QR confirmation
-        print_step(6, 6, "Board Removal")
-        process_board_removal(inform, slot_results)
+        # # Step 6: Board removal with QR confirmation
+        # print_step(6, 6, "Board Removal")
+        # process_board_removal(inform, slot_results)
 
-        # Show Page 14: Clean the test site
-        pop.show_image_popup(
-            title="Page 14: Clean the Test Site",
-            image_path=os.path.join(IMG_DIR, "14.png")
-        )
+        # # Show Page 14: Clean the test site
+        # pop.show_image_popup(
+        #     title="Page 14: Clean the Test Site",
+        #     image_path=os.path.join(IMG_DIR, "14.png")
+        # )
 
         # Final summary display
 

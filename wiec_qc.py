@@ -10,7 +10,7 @@ import wiec_serial as WIEC_SERIAL
 import wiec_wib_setup as WIEC_SETUP
 import wiec_continuity as WIEC_CONTINUITY_TESTS
 import wiec_crate_gui as WIEC_CRATE_GUI
-
+import wiec_femb_checkout as WIEC_FEMB_CHECKOUT
 
 RESULTS_FILE = "results.json"
 
@@ -90,16 +90,22 @@ def main():
             "key": "wib_serial",
             "function": WIEC_SERIAL.main,
         },
+        # {
+        #     "name": "wib_setup.py",
+        #     "key": "wib_setup",
+        #     "function": WIEC_SETUP.run_wib_setup,
+        # },
         {
-            "name": "wib_setup.py",
-            "key": "wib_setup",
-            "function": WIEC_SETUP.run_wib_setup,
+            "name": "femb_checkout.py",
+            "key": "femb_checkout",
+            "function": WIEC_FEMB_CHECKOUT.main,
         },
-        {
-            "name": "continuity_tests.py",
-            "key": "continuity_tests",
-            "function": WIEC_CONTINUITY_TESTS.run_continuity_tests,
-        },
+
+        # {
+        #     "name": "continuity_tests.py",
+        #     "key": "continuity_tests",
+        #     "function": WIEC_CONTINUITY_TESTS.run_continuity_tests,
+        # },
     ]
 
     try:
