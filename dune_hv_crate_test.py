@@ -9,6 +9,7 @@ from keysight_daq970a import Keysight970A
 from rigol_dp832a import RigolDP832A
 from caen_r8033dm_wrapper import CAENR8033DM_WRAPPER
 from pl506 import PL506
+import wiec_ptc_power
 
 import csv
 from pathlib import Path
@@ -95,6 +96,10 @@ class LDOmeasure:
             raise
 
         self.emergency_shutoff() #just in case not already off  	
+        
+        # update wiec results json file with results of dune hv crate test
+
+        
 	
         if (self.fan_test_result and self.heat_test_result and self.hv_test_result):
             self.ws.cell(row=self.row, column=1, value=self.test_name).style = "pass"
@@ -102,6 +107,11 @@ class LDOmeasure:
         else:
             self.ws.cell(row=self.row, column=1, value=self.test_name).style = "fail"
             self.datastore['overall'] = "Fail"
+            wiec_ptc_power.results_data["dune_hv_crate_test"] = "False"
+        
+        with open('results.json', 'w') as jsonfile:
+            json.dump(wiec_ptc_power.results_data, jsonfile, indent=4) 
+        
         self.wb.save(self.path_to_spreadsheet)
 
         end_time = datetime.now()

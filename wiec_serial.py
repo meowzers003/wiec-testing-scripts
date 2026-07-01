@@ -5,6 +5,7 @@ import sys
 import time
 import subprocess
 
+
 try:
     import serial
 except ImportError:
