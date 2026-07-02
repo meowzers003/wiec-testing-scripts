@@ -27,25 +27,29 @@ print(f"\n Login in to PetaLinux output: {ser}") # may not be printable
 date_output = WIEC_SERIAL.set_date(ser, get_system_ubuntu_date())
 print(f"\n Set date output: {date_output}")
 
+
+wibs = {} # key is wib number, value is power state (ON/OFF)
+
 def wib_power():
     # asks user the wib # of interest to power on/off
-    wibs = []
-    wib_states = []
+
     wib_number = input("Enter the WIB number you want to power on/off: ")
-    wibs.append(wib_number)
-    state = input("Enter the power state (ON/OFF) for WIB {}: ".format(wib_number))
-    wib_states.append(state)
+    wibs[wib_number] = "OFF"  # Initialize with None
+    state = input(f"Enter the power state (ON/OFF) for WIB {wib_number}: ")
+    wibs[wib_number] = state.upper()  # Store the state in uppercase
 
     more = input("Do you want to power on/off more WIBs? (y/n): ")
     if more.lower() == 'y':
         while True:
             wib_number = input("Enter the WIB number you want to power on/off: ")
-            wibs.append(wib_number)
+            wibs[wib_number] = "OFF"
+            state = input(f"Enter the power state (ON/OFF) for WIB {wib_number}: ")
+            wibs[wib_number] = state.upper()
             more = input("Do you want to power on/off more WIBs? (y/n): ")
             if more.lower() != 'y':
                 break
     
-    power_outputs = WIEC_SERIAL.power_wib(ser, wibs, wib_states)
+    power_outputs = WIEC_SERIAL.power_wib(ser, wibs)
 
     print("\nPower control outputs:")
     for output in power_outputs:
@@ -53,7 +57,14 @@ def wib_power():
     
     #### check what potential error messages could be later and account to handle those 
 
-    
+
+
+
+def main():
+    wib_power()
+
+    ser.close()
+
 
 
 

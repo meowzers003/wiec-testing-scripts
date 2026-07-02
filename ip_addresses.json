@@ -1,0 +1,9 @@
+{
+    "$schema": 1,
+    
+    "caenR8033DM": "169.254.12.34",
+    "keysight970a": "TCPIP::169.254.9.69::INSTR",
+    "PL506_IP_ADDR": "169.254.2.12",
+    "rigol832a0": "TCPIP::169.254.4.20::INSTR",
+    "rigol832a1": "TCPIP::169.254.4.21::INSTR"
+}

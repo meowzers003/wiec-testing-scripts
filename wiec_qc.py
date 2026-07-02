@@ -40,6 +40,7 @@ def test_passed(test_key):
 
 
 def run_required_step(test_name, test_key, test_function):
+    # print clean header for current test
     print("\n" + "=" * 70)
     print(f"Running {test_name}...")
     print("=" * 70)
@@ -61,16 +62,10 @@ def run_required_step(test_name, test_key, test_function):
 
 
 def shutdown_all():
-    """
-    Put final hardware shutdown logic here.
-
-    Examples:
-        - turn off PL506
-        - turn off Rigol channels
-        - close serial ports
-        - power down fans
-    """
     print("\nRunning final shutdown logic...")
+    WIEC_PTC_POWER.shutdown_wiec()
+    
+
 
 
 def main():
@@ -85,21 +80,23 @@ def main():
             "key": "ptc_power",
             "function": WIEC_PTC_POWER.initialize_wiec,
         },
-        {
-            "name": "wib_serial.py",
-            "key": "wib_serial",
-            "function": WIEC_SERIAL.main,
-        },
-        # {
-        #     "name": "wib_setup.py",
-        #     "key": "wib_setup",
-        #     "function": WIEC_SETUP.run_wib_setup,
+        ### wib_serial is just helper function for wiec ptc-wib setup. wib setup calls upon it already
+        ### to login and whatnot 
+        # { 
+        #     "name": "wib_serial.py",
+        #     "key": "wib_serial",
+        #     "function": WIEC_SERIAL.main,
         # },
         {
-            "name": "femb_checkout.py",
-            "key": "femb_checkout",
-            "function": WIEC_FEMB_CHECKOUT.main,
+            "name": "wib_setup.py",
+            "key": "wib_setup",
+            "function": WIEC_SETUP.power_wib,
         },
+        # {
+        #     "name": "femb_checkout.py",
+        #     "key": "femb_checkout",
+        #     "function": WIEC_FEMB_CHECKOUT.main,
+        # },
 
         # {
         #     "name": "continuity_tests.py",
