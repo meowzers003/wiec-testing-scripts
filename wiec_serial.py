@@ -201,13 +201,13 @@ def set_date(ser, date_str):
     output += run_petalinux_command(ser, "date")
     print(output)
 
-def power_wib(ser, wibs, power_state):
+def power_wib(ser, wibs):
     """
     Powers on or off the specified WIB.
     """
     outputs = []
-    print(f"Setting power for WIB {wibs} to {power_state}...")
-    for wib in wibs:
+    print(f"\nSetting power for WIBs as follows {wibs}...")
+    for wib, power_state in wibs.items():
         output = run_petalinux_command(ser, f"python3 power_on_wib.py {wib} {power_state}")
         print(output)
         outputs.append(output)
@@ -215,7 +215,7 @@ def power_wib(ser, wibs, power_state):
 
 def sensors_addr(ser, wibs):
     sensors_addr = []
-    for wib in wibs:
+    for wib, power_state in wibs.items():
         print(f"Getting sensor output for WIB {wib}...")
         output = run_petalinux_command(ser, f"i2cset -y 2 0x7{wib} 0x0002")
         output = run_petalinux_command(ser, f"i2cdetect -y -r 2")
@@ -225,6 +225,10 @@ def sensors_addr(ser, wibs):
     # print(output)
     return sensors_addr 
     
+def close_serial(ser):
+    ser.close()
+    print("\nSerial connection closed.")
+
 
 def main():
     check_host_serial_device()
@@ -239,8 +243,7 @@ def main():
     output = run_petalinux_command(ser, "ls /dev/tty*")
     print(output)
 
-    ser.close()
-    print("\nDone.")
+    close_serial(ser)
 
 
 if __name__ == "__main__":

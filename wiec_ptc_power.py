@@ -30,7 +30,7 @@ r0 = RigolDP832A(rm, json_data, 0)
 r1 = RigolDP832A(rm, json_data, 1)
 k = KEYSIGHT(rm, json_data)
 
-def initialize_wiec(self):
+def initialize_wiec():
     # turn on all fans 
     json_data['rigol832a_fan_voltage'] = json_data['WIEC_fan_voltage'] 
     json_data['rigol832a_fan_current'] = json_data['WIEC_fan_current']
@@ -71,7 +71,7 @@ def initialize_wiec(self):
     print(readback)
 
         
-def shutdown_wiec(self):
+def shutdown_wiec():
     # turn off PL506 channel for PTC power supply
     pl506 = PL506(ip=json_data["PL506_IP_ADDR"])
     pl506.channel_off(channel=json_data["PL506_channel"])
