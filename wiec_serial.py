@@ -192,14 +192,7 @@ def set_timing(ser, timing):
     output = run_petalinux_command(ser, "python3 set_timing.py")
     print(output)
 
-def set_date(ser, date_str):
-    """
-    Sets the date on the PetaLinux shell.
-    """
-    print(f"Setting date to {date_str}...")
-    output = run_petalinux_command(ser, f"sudo date -s '{date_str}'")
-    output += run_petalinux_command(ser, "date")
-    print(output)
+
 
 def power_wib(ser, wibs):
     """
@@ -229,6 +222,26 @@ def close_serial(ser):
     ser.close()
     print("\nSerial connection closed.")
 
+#### just to get current time and date in ubuntu format --------------------
+import time
+
+def get_system_ubuntu_date():
+    # Grab the current system time structure
+    local_time = time.localtime() #
+    
+    # Format according to Ubuntu's default structure
+    # Alternative format string fallback for Windows cross-compatibility (%d instead of %e)
+    return time.strftime("%a %b %d %H:%M:%S %Z %Y", local_time)
+
+def set_date(ser):
+    """
+    Sets the date on the PetaLinux shell.
+    """
+    date_str = get_system_ubuntu_date()
+    print(f"Setting date to {date_str}...")
+    output = run_petalinux_command(ser, f"sudo date -s '{date_str}'")
+    output += run_petalinux_command(ser, "date")
+    print(f"\n Set date output: {output}")
 
 def main():
     check_host_serial_device()

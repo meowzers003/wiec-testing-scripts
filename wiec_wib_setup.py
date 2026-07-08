@@ -4,29 +4,11 @@ import subprocess
 import os
 import sys
 
-#### just to get current time and date in ubuntu format --------------------
-import time
-
-def get_system_ubuntu_date():
-    # Grab the current system time structure
-    local_time = time.localtime() #
-    
-    # Format according to Ubuntu's default structure
-    # Alternative format string fallback for Windows cross-compatibility (%d instead of %e)
-    return time.strftime("%a %b %d %H:%M:%S %Z %Y", local_time)
-
 #### ----------------------------------------------------------------------------
 import wiec_serial as WIEC_SERIAL
 
-# log into Petalinux 
+
 ser = WIEC_SERIAL.login()
-print(f"\n Login in to PetaLinux output: {ser}") # may not be printable 
-
-
-# set timing and date first 
-date_output = WIEC_SERIAL.set_date(ser, get_system_ubuntu_date())
-print(f"\n Set date output: {date_output}")
-
 
 wibs = {} # key is wib number, value is power state (ON/OFF)
 
@@ -63,7 +45,7 @@ def wib_power():
 def main():
     wib_power()
 
-    ser.close()
+    
 
 
 
