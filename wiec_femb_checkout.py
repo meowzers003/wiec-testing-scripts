@@ -20,8 +20,8 @@ from BNL_CE_WIB_SW_QC.GUI import pop_window as pop
 
 from BNL_CE_WIB_SW_QC.qc_utils import QC_Process
 from BNL_CE_WIB_SW_QC.qc_results import analyze_test_results, display_qc_results
+from wiec_qc import RESULTS_FILE
 
-import wiec_qc 
 
 
 # Image paths for instruction popups
@@ -450,7 +450,9 @@ def main():
     init_config = read_init_setup()
 
     # Save configuration with all fields matching femb_info_implement.csv
-    info = wiec_qc.load_results()
+    info = None
+    with open('results.json', "r") as jsonfile:
+        info = json.load(jsonfile)  
 
     tester_name = info.get("tester_name", "Unknown")
     tester_email = info.get("tester_email", "Unknown")

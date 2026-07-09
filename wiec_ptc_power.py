@@ -16,7 +16,7 @@ import dune_hv_crate_test as DUNE_HV_CRATE_TEST
 # set up configurations
 json_data = None
 with open('config.json') as jsonfile:
-    config_file = json.load(jsonfile)
+    json_data = json.load(jsonfile)
 
 results_data = None
 with open('results.json') as jsonfile:
@@ -29,6 +29,7 @@ fans_on = True
 r0 = RigolDP832A(rm, json_data, 0)
 r1 = RigolDP832A(rm, json_data, 1)
 k = KEYSIGHT(rm, json_data)
+pl506 = PL506(ip=json_data["PL506_IP_ADDR"])
 
 def initialize_wiec():
     # turn on all fans 
@@ -60,23 +61,22 @@ def initialize_wiec():
             return None # end func execution early upon error
 
     # turn on PL506 channel for PTC power supply since fan is confirmed to be working
-    readback = PL506.safe_turn_on_channel(channel=json_data["PL506_channel"],
+    readback = pl506.safe_turn_on_channel(channel=json_data["PL506_channel"],
                                                 max_voltage_v=json_data["PL506_voltage_max"],
                                                 voltage_v=json_data["PL506_sense_voltage"],
                                                 max_current_a=json_data["PL506_current_max"],
                                                 current_limit_a=json_data["PL506_current_limit"],
                                                 settle_s=json_data["PL506_settle_seconds"])
         
-    print(" --> PL506 channel {json_data['PL506_channel']} turned on with readback information:")
+    print(f" --> PL506 channel {json_data['PL506_channel']} turned on with readback information:")
     print(readback)
 
         
 def shutdown_wiec():
     # turn off PL506 channel for PTC power supply
-    pl506 = PL506(ip=json_data["PL506_IP_ADDR"])
     pl506.channel_off(channel=json_data["PL506_channel"])
-    PL506.main_off()
-    print(" --> PL506 channel {json_data['PL506_channel']} turned off")
+    pl506.main_off()
+    print(f" --> PL506 channel {json_data['PL506_channel']} turned off")
     # turn off all fans 
     r0.power("OFF", "fan") # turn off fan power supply 
 

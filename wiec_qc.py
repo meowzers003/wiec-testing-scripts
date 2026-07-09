@@ -55,6 +55,7 @@ def run_required_step(test_name, test_key, test_function):
 
     if test_passed(test_key):
         print(f"{test_name} passed.")
+        mark_result(test_key, True) # mark as true is passed 
         return True
 
     print(f"{test_name} failed.")
@@ -76,8 +77,8 @@ def main():
             "function": WIEC_CRATE_GUI.main,
         },
         {
-            "name": "ptc_power.py",
-            "key": "ptc_power",
+            "name": "wiec_ptc_power.py",
+            "key": "ptc_setup",
             "function": WIEC_PTC_POWER.initialize_wiec,
         },
         ### wib_serial is just helper function for wiec ptc-wib setup. wib setup calls upon it already
@@ -88,15 +89,15 @@ def main():
         #     "function": WIEC_SERIAL.main,
         # },
         {
-            "name": "wib_setup.py",
+            "name": "wiec_wib_setup.py",
             "key": "wib_setup",
-            "function": WIEC_SETUP.power_wib,
+            "function": WIEC_SETUP.wib_power,
         },
-        # {
-        #     "name": "femb_checkout.py",
-        #     "key": "femb_checkout",
-        #     "function": WIEC_FEMB_CHECKOUT.main,
-        # },
+        {
+            "name": "femb_checkout.py",
+            "key": "femb_checkout",
+            "function": WIEC_FEMB_CHECKOUT.main,
+        },
 
         # {
         #     "name": "continuity_tests.py",
