@@ -142,7 +142,15 @@ def run_dune_hv_crate_test(config_file: str, test_name: str):
     print("\nStarting DUNE HV crate test...")
     print("Do not close this terminal while the test is running.\n")
 
-    return LDOmeasure(config_file, test_name)
+    try:
+        test = LDOmeasure(config_file, test_name)
+    except Exception:
+        return False
+    
+    return getattr(test, "datastore", {}).get("overall") == "Pass"
+
+def shutdown_dune_hv_crate_test():
+    LDOmeasure("None", "None", True)
 
 
 def main():
@@ -182,6 +190,7 @@ def main():
         raise
 
     print("\nDUNE HV crate test wrapper complete.")
+    return True
 
 
 if __name__ == "__main__":

@@ -18,9 +18,6 @@ json_data = None
 with open('config.json') as jsonfile:
     json_data = json.load(jsonfile)
 
-results_data = None
-with open('results.json') as jsonfile:
-    results_data = json.load(jsonfile)
 
 rm = pyvisa.ResourceManager('@py')
 
@@ -39,6 +36,7 @@ def initialize_wiec():
     r0.power("ON", "fan") # turn on fan power supply
     r1.setup_fanread()
     r1.power("ON", "fanread")
+    k.initialize_fan()
 
     # check if every fan is on and oscillating at the correct frequency
     fan_voltage = r0.get_voltage("fan")
@@ -52,13 +50,7 @@ def initialize_wiec():
         if (fan_read_signal[fan] < json_data["fan_osc_freq"]):
             print(f" --> CONFIG ERROR! Fan #{fan} is not oscillating at the correct frequency: {fan_read_signal[fan]} Hz")			
             print(f" --> Please check fan connections and restart test")	
-            results_data["errors"].append(f"CONFIG ERROR! Fan #{fan} is not oscillating at the correct frequency: {fan_read_signal[fan]} Hz")
-            results_data["ptc_setup"] = "False"
-            
-            with open('results.json', 'w') as jsonfile:
-                json.dump(results_data, jsonfile, indent=4) 
-
-            return None # end func execution early upon error
+            return False # end func execution early upon error
 
     # turn on PL506 channel for PTC power supply since fan is confirmed to be working
     readback = pl506.safe_turn_on_channel(channel=json_data["PL506_channel"],
@@ -70,6 +62,7 @@ def initialize_wiec():
         
     print(f" --> PL506 channel {json_data['PL506_channel']} turned on with readback information:")
     print(readback)
+    return True
 
         
 def shutdown_wiec():
@@ -79,6 +72,8 @@ def shutdown_wiec():
     print(f" --> PL506 channel {json_data['PL506_channel']} turned off")
     # turn off all fans 
     r0.power("OFF", "fan") # turn off fan power supply 
+    r1.power("OFF", "fanread")
+    
 
 
 

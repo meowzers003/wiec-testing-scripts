@@ -20,7 +20,6 @@ from BNL_CE_WIB_SW_QC.GUI import pop_window as pop
 
 from BNL_CE_WIB_SW_QC.qc_utils import QC_Process
 from BNL_CE_WIB_SW_QC.qc_results import analyze_test_results, display_qc_results
-from wiec_qc import RESULTS_FILE
 
 
 
@@ -37,7 +36,6 @@ CSV_FILE = './femb_info.csv'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INIT_SETUP_CSV = os.path.join(BASE_DIR, 'init_setup.csv')
 
-info_data = None
 
 
 def read_init_setup():
@@ -500,7 +498,7 @@ def main():
             print(Fore.RED + "  ✗✗✗ SOME TESTS FAILED ✗✗✗" + Style.RESET_ALL)
             print(Fore.YELLOW + "\n  Please check the failed FEMBs and take appropriate action." + Style.RESET_ALL)
         print_status('success', "Power supply turned OFF and connection closed.")
-        return 0 if all_passed else 1
+        return True if all_passed else False
 
     finally:
         # Always turn off power supply, even on exceptions

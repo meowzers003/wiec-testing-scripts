@@ -31,11 +31,12 @@ def wib_power():
             if more.lower() != 'y':
                 break
     
-    power_outputs = WIEC_SERIAL.power_wib(ser, wibs)
+    return WIEC_SERIAL.power_wib(ser, wibs)
 
-    print("\nPower control outputs:")
-    for output in power_outputs:
-        print(output)
+    # power_outputs = WIEC_SERIAL.power_wib(ser, wibs)
+    # print("\nPower control outputs:")
+    # for output in power_outputs:
+    #     print(output)
     
     #### check what potential error messages could be later and account to handle those 
 

@@ -24,7 +24,8 @@ from scipy.optimize import curve_fit
 import traceback
 
 class LDOmeasure:
-    def __init__(self, config_file = None, name = None):
+    def __init__(self, config_file = None, name = None, shutoff=False):
+
         self.prefix = "DUNE HV Crate Tester"
         print(f"{self.prefix} --> Welcome to the DUNE HV crate production testing script")
         if not config_file:
@@ -51,6 +52,15 @@ class LDOmeasure:
         self.r1.setup_hvpullup()
         self.r1.setup_hvpullup2()
         self.r1.setup_fanread()
+
+        if shutoff:
+            print("Shutting off all devices...")
+            self.emergency_shutoff()
+            print("All devices shut off.")
+
+
+            
+
         #Now we can get the input for the name of the test
         if (name):
             self.test_name = name
@@ -75,20 +85,20 @@ class LDOmeasure:
         
 
         try:
-            # self.fan_test()
-            # self.wb.save(self.path_to_spreadsheet)
+            self.fan_test()
+            self.wb.save(self.path_to_spreadsheet)
 
-            # self.fan_test_sweep() # trigger PWN measurement fan test
-            # self.wb.save(self.path_to_spreadsheet)
+            self.fan_test_sweep() # trigger PWN measurement fan test
+            self.wb.save(self.path_to_spreadsheet)
 
-            # self.heater_test()
-            # self.wb.save(self.path_to_spreadsheet)
+            self.heater_test()
+            self.wb.save(self.path_to_spreadsheet)
 
-            # self.hv_test() #add'l specific exceptions are handled within 
+            self.hv_test() #add'l specific exceptions are handled within 
 
-            self.initialize_wiec() # turn on PTC power supply and fans
-            # ptc test functions and read/write to spreadsheet function calls 
-            self.shutdown_wiec()
+            # self.initialize_wiec() # turn on PTC power supply and fans
+            # # ptc test functions and read/write to spreadsheet function calls 
+            # self.shutdown_wiec()
             
         except:
             print("Detected exception, powering off all devices first.")
@@ -97,9 +107,6 @@ class LDOmeasure:
 
         self.emergency_shutoff() #just in case not already off  	
         
-        # update wiec results json file with results of dune hv crate test
-
-        
 	
         if (self.fan_test_result and self.heat_test_result and self.hv_test_result):
             self.ws.cell(row=self.row, column=1, value=self.test_name).style = "pass"
@@ -107,10 +114,6 @@ class LDOmeasure:
         else:
             self.ws.cell(row=self.row, column=1, value=self.test_name).style = "fail"
             self.datastore['overall'] = "Fail"
-            wiec_ptc_power.results_data["dune_hv_crate_test"] = "False"
-        
-        with open('results.json', 'w') as jsonfile:
-            json.dump(wiec_ptc_power.results_data, jsonfile, indent=4) 
         
         self.wb.save(self.path_to_spreadsheet)
 
@@ -125,6 +128,7 @@ class LDOmeasure:
  	     
         print(f"{self.prefix} --> Test complete")
         print(f"{self.prefix} --> Test result: {self.datastore['overall']}")
+
         self.beep_sequence()
         #self.make_hv_plots()
 

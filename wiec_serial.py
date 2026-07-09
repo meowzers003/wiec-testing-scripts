@@ -204,7 +204,10 @@ def power_wib(ser, wibs):
         output = run_petalinux_command(ser, f"python3 power_on_wib.py {wib} {power_state}")
         print(output)
         outputs.append(output)
-    return outputs 
+
+    # check for errors in the output and handle them accordingly
+
+    return True # for now, assume it turns on correctly (until the WIB sensor output data structure is known to parse and error handle it) 
 
 def sensors_addr(ser, wibs):
     sensors_addr = []

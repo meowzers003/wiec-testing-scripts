@@ -23,12 +23,12 @@ def load_results():
         return {}
 
 
-def save_results(results):
+def save_results(results): # updates with edits 
     with open(RESULTS_FILE, "w") as jsonfile:
         json.dump(results, jsonfile, indent=4)
 
 
-def mark_result(test_key, passed):
+def mark_result(test_key, passed): # edits results.json
     results = load_results()
     results[test_key] = "True" if passed else "False"
     save_results(results)
@@ -44,27 +44,40 @@ def run_required_step(test_name, test_key, test_function):
     print("\n" + "=" * 70)
     print(f"Running {test_name}...")
     print("=" * 70)
+    test_result = None
+    test_result =  test_function()
 
-    try:
-        test_function()
-    except Exception:
-        print(f"{test_name} raised an exception.")
-        print(traceback.format_exc())
+    if test_result:
+        print(f"{test_name} passed.")
+        mark_result(test_key, True)
+        return True
+    else:
+        print(f"{test_name} failed.")
         mark_result(test_key, False)
         return False
+    
+    # try:
+    #     test_function()
+    # except Exception:
+    #     print(f"{test_name} raised an exception.")
+    #     print(traceback.format_exc())
+    #     mark_result(test_key, False)
+    #     return False
 
-    if test_passed(test_key):
-        print(f"{test_name} passed.")
-        mark_result(test_key, True) # mark as true is passed 
-        return True
+    # if test_passed(test_key):
+    #     print(f"{test_name} passed.")
+    #     mark_result(test_key, True) # mark as true is passed 
+    #     return True
 
-    print(f"{test_name} failed.")
-    return False
+    # print(f"{test_name} failed.")
+    # return False
 
 
 def shutdown_all():
     print("\nRunning final shutdown logic...")
     WIEC_PTC_POWER.shutdown_wiec()
+    WIEC_CRATE_GUI.shutdown_dune_hv_crate_test()
+    print("WIB crate test shutdown completed successfully.")
     
 
 
@@ -113,6 +126,8 @@ def main():
                 test_key=step["key"],
                 test_function=step["function"],
             )
+
+
 
             if not passed:
                 print(f"\nStopping sequence because {step['name']} did not pass.")
