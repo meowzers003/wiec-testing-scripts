@@ -125,6 +125,8 @@ def wib_power():
     # globals so they wont initialize upon import 
     global ser, wibs
     ser = WIEC_SERIAL.login()
+
+    
     wibs = {} # key is wib number, value is power state (ON/OFF)
 
 

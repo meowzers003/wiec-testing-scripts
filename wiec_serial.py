@@ -178,18 +178,18 @@ def run_petalinux_command(ser, command, timeout=10):
     return output
 
 
-# function to collect output response 
+# function to collect output resposnse 
 def login(): # func to just login
     check_host_serial_device()
     ser = login_petalinux()
+    set_date(ser)
     return ser
 
-def set_timing(ser, timing):
+def set_timing(ser):
     """
     Sets the timing parameter on the PetaLinux shell.
     """
-    print(f"Setting timing to {timing}...")
-    output = run_petalinux_command(ser, "python3 set_timing.py")
+    output = run_petalinux_command(ser, "python3 setup_timing.py")
     print(output)
 
 
@@ -242,6 +242,7 @@ def set_date(ser):
     """
     Sets the date on the PetaLinux shell.
     """
+    set_timing(ser)
     date_str = get_system_ubuntu_date()
     print(f"Setting date to {date_str}...")
     output = run_petalinux_command(ser, f"sudo date -s '{date_str}'")
