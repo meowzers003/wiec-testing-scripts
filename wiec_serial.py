@@ -54,11 +54,7 @@ def read_until_any(ser, keywords, timeout=40):
     Reads serial output until one of the keywords appears.
     Garbage bytes are ignored safely.
     """
-    ser.reset_input_buffer()
-
-    # Try to wake up the console.
-    for _ in range(3):
-        send_line(ser, "")
+    # FIX: Removed ser.reset_input_buffer() from here to prevent erasing valid text.
 
     print("Waiting for PetaLinux login prompt...")
 
@@ -80,7 +76,9 @@ def read_until_any(ser, keywords, timeout=40):
                     return buffer, keyword
 
         if time.time() >= next_wake:
-            send_line(ser, "")
+            # FIX: Send raw \r\n instead of relying on default print formatting
+            ser.write(b"\r\n")
+            ser.flush()
             next_wake += 5
 
         time.sleep(0.1)
@@ -88,9 +86,11 @@ def read_until_any(ser, keywords, timeout=40):
     return buffer, None
 
 def send_line(ser, line):
-    ser.write((line + "\n").encode())
+    # FIX: Force \r\n explicitly to break past stuck terminal states
+    ser.write((line + "\r\n").encode())
     ser.flush()
     time.sleep(0.3)
+
 
 
 def login_petalinux():
@@ -105,35 +105,49 @@ def login_petalinux():
         )
     except PermissionError:
         print(f"Permission denied opening {DEVICE}.")
-        print("You may need to add your user to the dialout group:")
-        print("  sudo usermod -a -G dialout $USER")
-        print("Then log out and log back in.")
         sys.exit(1)
 
-    # Let the serial line settle.
     time.sleep(1)
-
-    # Clear garbage/startup bytes.
     ser.reset_input_buffer()
 
-    # Press Enter a few times to trigger a login prompt or shell prompt.
-    for _ in range(3):
-        send_line(ser, "")
+    # FIX 1: Do NOT spam enter right away. Let's check where the board is first.
+    print("Checking initial terminal state...")
+    ser.write(b"\r\n")
+    ser.flush()
+    time.sleep(0.5)
 
-    print("Waiting for PetaLinux login prompt...")
-
+    # FIX 2: Add "ZynqMP>" to your allowed initial keywords
     output, matched = read_until_any(
         ser,
-        keywords=["login:", "password:", "#", "$"],
+        keywords=["login:", "password:", "#", "$", "ZynqMP>"],
         timeout=20
     )
 
     if matched is None:
-        print("Did not see login prompt or shell prompt.")
+        print("Did not see login prompt, shell prompt, or bootloader.")
         print("Last serial output was:")
         print(output)
         ser.close()
         sys.exit(1)
+
+    # FIX 3: If stuck in U-Boot, force it to boot into PetaLinux
+    if matched == "ZynqMP>":
+        print("Detected U-Boot prompt. Forcing PetaLinux boot sequence...")
+        send_line(ser, "boot")
+        
+        # Wait longer because booting Linux takes time
+        print("Waiting for PetaLinux to finish booting...")
+        output, matched = read_until_any(
+            ser,
+            keywords=["login:", "password:", "#", "$"],
+            timeout=60  # Increased timeout for full kernel boot
+        )
+        
+        if matched is None:
+            print("PetaLinux failed to boot after forcing 'boot'.")
+            print(output)
+            ser.close()
+            sys.exit(1)
 
     # Already logged in
     if matched in ["#", "$"]:
@@ -144,28 +158,16 @@ def login_petalinux():
     if matched.lower() == "login:":
         print("Sending username...")
         send_line(ser, USERNAME)
-
-        output, matched = read_until_any(
-            ser,
-            keywords=["password:", "#", "$"],
-            timeout=10
-        )
+        output, matched = read_until_any(ser, keywords=["password:", "#", "$"], timeout=10)
 
     # Password prompt
     if matched and matched.lower() == "password:":
         print("Sending password...")
         send_line(ser, PASSWORD)
-
-        output, matched = read_until_any(
-            ser,
-            keywords=["#", "$", "login incorrect"],
-            timeout=10
-        )
+        output, matched = read_until_any(ser, keywords=["#", "$", "login incorrect"], timeout=10)
 
     if matched is None or "login incorrect" in output.lower():
         print("Login failed.")
-        print("Last serial output was:")
-        print(output)
         ser.close()
         sys.exit(1)
 
@@ -177,7 +179,9 @@ def run_petalinux_command(ser, command, timeout=10):
     """
     Sends a command to the PetaLinux shell and returns printed output.
     """
-    ser.reset_input_buffer()
+    # Consume any trailing leftover data safely instead of wiping the hardware buffer
+    if ser.in_waiting:
+        ser.read(ser.in_waiting)
 
     send_line(ser, command)
 
@@ -188,6 +192,7 @@ def run_petalinux_command(ser, command, timeout=10):
     )
 
     return output
+
 
 
 # function to collect output resposnse 
