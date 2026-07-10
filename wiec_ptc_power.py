@@ -7,9 +7,10 @@ import json
 import pyvisa
 
 # device classes
-import rigol_dp832a as RigolDP832A
-import pl506 as PL506
-import keysight_daq970a as KEYSIGHT
+from keysight_daq970a import Keysight970A
+from rigol_dp832a import RigolDP832A
+from caen_r8033dm_wrapper import CAENR8033DM_WRAPPER
+from pl506 import PL506
 
 # fans_on = True # unnecessary since there's blocking logic
 
@@ -25,7 +26,7 @@ def initialize_wiec():
     rm = pyvisa.ResourceManager('@py')
     r0 = RigolDP832A(rm, json_data, 0)
     r1 = RigolDP832A(rm, json_data, 1)
-    k = KEYSIGHT(rm, json_data)
+    k = Keysight970A(rm, json_data)
     pl506 = PL506(ip=json_data["PL506_IP_ADDR"])
 
     ptc_initialized = True

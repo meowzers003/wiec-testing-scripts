@@ -49,13 +49,22 @@ def check_host_serial_device():
     print(f"Found Zynq serial device: {DEVICE}")
 
 
-def read_until_any(ser, keywords, timeout=20):
+def read_until_any(ser, keywords, timeout=40):
     """
     Reads serial output until one of the keywords appears.
     Garbage bytes are ignored safely.
     """
+    ser.reset_input_buffer()
+
+    # Try to wake up the console.
+    for _ in range(3):
+        send_line(ser, "")
+
+    print("Waiting for PetaLinux login prompt...")
+
     start_time = time.time()
     buffer = ""
+    next_wake = start_time + 5
 
     while time.time() - start_time < timeout:
         waiting = ser.in_waiting
@@ -70,10 +79,13 @@ def read_until_any(ser, keywords, timeout=20):
                 if keyword.lower() in lower_buffer:
                     return buffer, keyword
 
+        if time.time() >= next_wake:
+            send_line(ser, "")
+            next_wake += 5
+
         time.sleep(0.1)
 
     return buffer, None
-
 
 def send_line(ser, line):
     ser.write((line + "\n").encode())
