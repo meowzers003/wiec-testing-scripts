@@ -461,7 +461,7 @@ def main():
     # Initialize power supply controller
     print_status('info', "Initializing power supply controller...")
     psu = rigol.PowerSupplyController()
-
+    psu_closed = False 
     try:
         # Step 4: Run checkout test
         print_step(4, 5, "Running Checkout Test")
@@ -471,8 +471,8 @@ def main():
         print_step(5, 6, "Generating Results ")
         all_passed, summary_text, slot_results = generate_result_summary(inform, data_path, report_path)
         # send_result_email(tester_email, all_passed, summary_text, inform)
-        print_status('info', "Turning OFF power supply...")
-        psu.close()
+        
+        #psu.close()
         # # Show Page 9: Open cover for board removal
         # pop.show_image_popup(
         #     title="Page 9: Review Result and Open Cover",
@@ -501,9 +501,15 @@ def main():
         return True if all_passed else False
 
     finally:
-        # Always turn off power supply, even on exceptions
-        input(Fore.CYAN + "  Press Enter to next" + Style.RESET_ALL)
-        print(Fore.CYAN + "  Press Enter 'exit' in terminal line to quit..." + Style.RESET_ALL)
+        if not psu_closed:
+            print_status('info', "Turning OFF power supply...")
+            try:
+                psu.close()
+                psu_closed = True
+                print_status('success', "Power supply turned OFF and connection closed.")
+            except Exception as exc:
+                print_status('error', f"Power supply shutdown failed: {exc}")
+                # Always turn off power supply, even on exceptions
 
 
 if __name__ == "__main__":

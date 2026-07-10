@@ -9,7 +9,6 @@ from keysight_daq970a import Keysight970A
 from rigol_dp832a import RigolDP832A
 from caen_r8033dm_wrapper import CAENR8033DM_WRAPPER
 from pl506 import PL506
-import wiec_ptc_power
 
 import csv
 from pathlib import Path
@@ -1280,12 +1279,12 @@ class LDOmeasure:
         #input("pause here")
         self.r0.power("OFF", "heat_supply") #Turn off fan and heater power
         self.r0.power("OFF", "heat_switch")
-        self.r0.power("OFF", "fan")
-        self.r1.power("OFF", "fanread")
-        # add PL506 shut off 
+
+        # turn off PL506 first then fan for safety reasons
         self.pl506.channel_off(self.json_data["PL506_channel"])
         self.pl506.main_off()
-
+        self.r0.power("OFF", "fan")
+        self.r1.power("OFF", "fanread")
         self.k.set_relay(0, 0) #Probably not necessary    
 
     def reset_pyvisa_connections(self):	

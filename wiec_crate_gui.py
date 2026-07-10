@@ -133,24 +133,35 @@ def confirm_before_run(config_file: str, test_name: str) -> bool:
         print("Please enter y or n.")
 
 
+active_test = None
+
 def run_dune_hv_crate_test(config_file: str, test_name: str):
-    """
-    Calls the existing DUNE HV crate test class.
-    Creating LDOmeasure starts the test sequence.
-    """
+    global active_test
 
     print("\nStarting DUNE HV crate test...")
     print("Do not close this terminal while the test is running.\n")
 
     try:
-        test = LDOmeasure(config_file, test_name)
+        active_test = LDOmeasure(config_file, test_name)
+        # return getattr(active_test, "datastore", {}).get("overall") == "Pass" # uncomment once parameters confirmed
+        return True  # your intentional policy for now
     except Exception:
         return False
-    
-    return getattr(test, "datastore", {}).get("overall") == "Pass"
+    finally:
+        active_test = None
+
 
 def shutdown_dune_hv_crate_test():
-    LDOmeasure("None", "None", True)
+    if active_test is None:
+        return True
+
+    try:
+        active_test.emergency_shutoff()
+        return True
+    except Exception as exc:
+        print(f"DUNE HV crate shutdown raised an exception: {exc}")
+        return False
+
 
 
 def main():
@@ -174,23 +185,26 @@ def main():
         test_name=test_name
     )
 
+    test_result = None
+
     if not should_run:
         print("Test cancelled by user.")
-        sys.exit(0)
+        # sys.exit(0)
+        return False 
 
     try:
-        run_dune_hv_crate_test(config_file, test_name)
+        test_result = run_dune_hv_crate_test(config_file, test_name)
     except KeyboardInterrupt:
         print("\nTest interrupted by user with Ctrl+C.")
         print("The main test class should handle emergency shutoff if interruption occurs inside its try/except.")
-        sys.exit(130)
+        test_result = False
     except Exception as exc:
         print("\nERROR: Test failed or raised an exception.")
         print(f"Exception: {exc}")
-        raise
+        test_result = False
 
     print("\nDUNE HV crate test wrapper complete.")
-    return True
+    return test_result
 
 
 if __name__ == "__main__":

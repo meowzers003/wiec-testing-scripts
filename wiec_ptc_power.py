@@ -11,24 +11,25 @@ import rigol_dp832a as RigolDP832A
 import pl506 as PL506
 import keysight_daq970a as KEYSIGHT
 
-import dune_hv_crate_test as DUNE_HV_CRATE_TEST
+# fans_on = True # unnecessary since there's blocking logic
 
-# set up configurations
-json_data = None
-with open('config.json') as jsonfile:
-    json_data = json.load(jsonfile)
-
-
-rm = pyvisa.ResourceManager('@py')
-
-fans_on = True
-
-r0 = RigolDP832A(rm, json_data, 0)
-r1 = RigolDP832A(rm, json_data, 1)
-k = KEYSIGHT(rm, json_data)
-pl506 = PL506(ip=json_data["PL506_IP_ADDR"])
+ptc_initialized = False  # global variable to track if PTC hardware has been initialized
 
 def initialize_wiec():
+    # initialization little guys 
+    # set up configurations
+    global json_data, rm, r0, r1, k, pl506, ptc_initialized # doesnt initialize upon import
+    json_data = None
+    with open('config.json') as jsonfile:
+        json_data = json.load(jsonfile)
+    rm = pyvisa.ResourceManager('@py')
+    r0 = RigolDP832A(rm, json_data, 0)
+    r1 = RigolDP832A(rm, json_data, 1)
+    k = KEYSIGHT(rm, json_data)
+    pl506 = PL506(ip=json_data["PL506_IP_ADDR"])
+
+    ptc_initialized = True
+
     # turn on all fans 
     json_data['rigol832a_fan_voltage'] = json_data['WIEC_fan_voltage'] 
     json_data['rigol832a_fan_current'] = json_data['WIEC_fan_current']
@@ -66,6 +67,10 @@ def initialize_wiec():
 
         
 def shutdown_wiec():
+    if not ptc_initialized:
+        print("PTC shutdown skipped: PTC hardware was not initialized.")
+        return True
+    
     # turn off PL506 channel for PTC power supply
     pl506.channel_off(channel=json_data["PL506_channel"])
     pl506.main_off()
@@ -73,6 +78,7 @@ def shutdown_wiec():
     # turn off all fans 
     r0.power("OFF", "fan") # turn off fan power supply 
     r1.power("OFF", "fanread")
+    return True
     
 
 

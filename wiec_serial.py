@@ -198,28 +198,31 @@ def power_wib(ser, wibs):
     """
     Powers on or off the specified WIB.
     """
-    outputs = []
+    outputs = {}
     print(f"\nSetting power for WIBs as follows {wibs}...")
     for wib, power_state in wibs.items():
-        output = run_petalinux_command(ser, f"python3 power_on_wib.py {wib} {power_state}")
+        command = f"python3 power_on_wib.py {wib} {power_state}"
+        output = run_petalinux_command(ser, command)
         print(output)
-        outputs.append(output)
+        outputs[wib] = output
 
-    # check for errors in the output and handle them accordingly
-
-    return True # for now, assume it turns on correctly (until the WIB sensor output data structure is known to parse and error handle it) 
+    return outputs
 
 def sensors_addr(ser, wibs):
-    sensors_addr = []
+    sensor_outputs = {}
     for wib, power_state in wibs.items():
         print(f"Getting sensor output for WIB {wib}...")
-        output = run_petalinux_command(ser, f"i2cset -y 2 0x7{wib} 0x0002")
-        output = run_petalinux_command(ser, f"i2cdetect -y -r 2")
-        print(output)
-        sensors_addr.append(output)
+        switch_output = run_petalinux_command(ser, f"i2cset -y 2 0x7{wib} 0x0002")
+        detect_output = run_petalinux_command(ser, f"i2cdetect -y -r 2")
+        print(switch_output)
+        print(detect_output)
+        sensor_outputs[wib] = {
+            "i2cset": switch_output,
+            "i2cdetect": detect_output,
+        }
     # output = run_petalinux_command(ser, f"python3 ecat_test1b.py logfile_willupdatetorealdatelater.txt")
     # print(output)
-    return sensors_addr 
+    return sensor_outputs
     
 def close_serial(ser):
     ser.close()
@@ -227,7 +230,6 @@ def close_serial(ser):
 
 #### just to get current time and date in ubuntu format --------------------
 import time
-
 def get_system_ubuntu_date():
     # Grab the current system time structure
     local_time = time.localtime() #

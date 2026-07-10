@@ -3,14 +3,8 @@ import traceback
 import subprocess
 import os
 import sys
+import importlib
 
-import dune_hv_crate_test as DUNE_HV_CRATE_TEST
-import wiec_ptc_power as WIEC_PTC_POWER
-import wiec_serial as WIEC_SERIAL
-import wiec_wib_setup as WIEC_SETUP
-import wiec_continuity as WIEC_CONTINUITY_TESTS
-import wiec_crate_gui as WIEC_CRATE_GUI
-import wiec_femb_checkout as WIEC_FEMB_CHECKOUT
 
 RESULTS_FILE = "results.json"
 
@@ -39,45 +33,55 @@ def test_passed(test_key):
     return str(results.get(test_key)) == "True"
 
 
-def run_required_step(test_name, test_key, test_function):
-    # print clean header for current test
+
+def load_function(module_name, function_name):
+    module = importlib.import_module(module_name)
+    return getattr(module, function_name)
+
+
+def run_required_step(test_name, test_key, module_name, function_name):
     print("\n" + "=" * 70)
     print(f"Running {test_name}...")
     print("=" * 70)
-    test_result = None
-    test_result =  test_function()
+
+    try:
+        test_function = load_function(module_name, function_name)
+        test_result = bool(test_function())
+    except AttributeError:
+        print(f"Function {function_name} not found in module {module_name}.")
+        mark_result(test_key, False)
+        return False
+    except BaseException as exc:
+        print(f"{test_name} raised an exception.")
+        print(traceback.format_exc())
+        mark_result(test_key, False)
+        return False
+
+    mark_result(test_key, test_result)
 
     if test_result:
         print(f"{test_name} passed.")
-        mark_result(test_key, True)
         return True
-    else:
-        print(f"{test_name} failed.")
-        mark_result(test_key, False)
-        return False
-    
-    # try:
-    #     test_function()
-    # except Exception:
-    #     print(f"{test_name} raised an exception.")
-    #     print(traceback.format_exc())
-    #     mark_result(test_key, False)
-    #     return False
 
-    # if test_passed(test_key):
-    #     print(f"{test_name} passed.")
-    #     mark_result(test_key, True) # mark as true is passed 
-    #     return True
-
-    # print(f"{test_name} failed.")
-    # return False
-
+    print(f"{test_name} failed.")
+    return False
 
 def shutdown_all():
     print("\nRunning final shutdown logic...")
-    WIEC_PTC_POWER.shutdown_wiec()
-    WIEC_CRATE_GUI.shutdown_dune_hv_crate_test()
-    print("WIB crate test shutdown completed successfully.")
+
+    try:
+        ptc_power = importlib.import_module("wiec_ptc_power")
+        ptc_power.shutdown_wiec()
+    except BaseException:
+        print("PTC shutdown raised an exception.")
+        print(traceback.format_exc())
+
+    try:
+        crate_gui = importlib.import_module("wiec_crate_gui")
+        crate_gui.shutdown_dune_hv_crate_test()
+    except BaseException:
+        print("DUNE HV crate shutdown raised an exception.")
+        print(traceback.format_exc())
     
 
 
@@ -87,29 +91,26 @@ def main():
         {
             "name": "dune_hv_crate_test.py",
             "key": "dune_hv_crate_test",
-            "function": WIEC_CRATE_GUI.main,
+            "module": "wiec_crate_gui",
+            "function": "main",
         },
         {
             "name": "wiec_ptc_power.py",
             "key": "ptc_setup",
-            "function": WIEC_PTC_POWER.initialize_wiec,
+            "module": "wiec_ptc_power",
+            "function": "initialize_wiec",
         },
-        ### wib_serial is just helper function for wiec ptc-wib setup. wib setup calls upon it already
-        ### to login and whatnot 
-        # { 
-        #     "name": "wib_serial.py",
-        #     "key": "wib_serial",
-        #     "function": WIEC_SERIAL.main,
-        # },
         {
             "name": "wiec_wib_setup.py",
             "key": "wib_setup",
-            "function": WIEC_SETUP.wib_power,
+            "module": "wiec_wib_setup",
+            "function": "wib_power",
         },
         {
             "name": "femb_checkout.py",
             "key": "femb_checkout",
-            "function": WIEC_FEMB_CHECKOUT.main,
+            "module": "wiec_femb_checkout",
+            "function": "main",
         },
 
         # {
@@ -124,10 +125,9 @@ def main():
             passed = run_required_step(
                 test_name=step["name"],
                 test_key=step["key"],
-                test_function=step["function"],
+                module_name=step["module"],
+                function_name=step["function"],
             )
-
-
 
             if not passed:
                 print(f"\nStopping sequence because {step['name']} did not pass.")
