@@ -76,7 +76,7 @@ def initialize_wiec():
         while i != 3:
             print(f"Retry Attempt # {i+1}")
             readback = turn_on_pl506()
-            if readback.get("measured_current_a",0.0) == 0.0 or readback.get("terminal_voltage_v",0.0) == 0.0 :
+            if readback.get("measured_current_a",0.0) != 0.0 and readback.get("terminal_voltage_v",0.0) != 0.0 :
                 print(f" --> PL506 channel {json_data['PL506_channel']} turned on with readback information:")
                 print(readback)
                 return True
