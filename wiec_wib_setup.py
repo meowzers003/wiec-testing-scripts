@@ -76,7 +76,7 @@ def validate_wib_i2c_outputs(wibs, sensor_outputs):
     all_passed = True
 
     for wib, state in wibs.items():
-        if state != "ON":
+        if state != "on":
             print(f"WIB {wib} is {state}; skipping WIB address check.")
             continue
 
@@ -101,7 +101,7 @@ def validate_wib_ip_outputs(wibs, power_outputs, sensor_outputs):
     all_passed = True
 
     for wib, state in wibs.items():
-        if state != "ON":
+        if state != "on":
             continue
 
         expected_ip = expected_wib_ip(wib)
@@ -144,8 +144,8 @@ def wib_power():
 
     # asks user the wib # of interest to power on/off
     wib_number = normalize_wib_number(clean_input("Enter the WIB number you want to power on/off: "))
-    wibs[wib_number] = "OFF"  # Initialize with None
-    state = normalize_power_state(clean_input(f"Enter the power state (ON/OFF) for WIB {wib_number}: "))
+    wibs[wib_number] = "off"  # Initialize with None
+    state = normalize_power_state(clean_input(f"Enter the power state (on/off) for WIB {wib_number}: "))
     wibs[wib_number] = state  # Store the state in uppercase
 
     more = clean_input("Do you want to power on/off more WIBs? (y/n): ")
@@ -153,7 +153,7 @@ def wib_power():
         while True:
             wib_number = normalize_wib_number(clean_input("Enter the WIB number you want to power on/off: "))
             wibs[wib_number] = "OFF"
-            state = normalize_power_state(clean_input(f"Enter the power state (ON/OFF) for WIB {wib_number}: "))
+            state = normalize_power_state(clean_input(f"Enter the power state (on/off) for WIB {wib_number}: "))
             wibs[wib_number] = state
             more = clean_input("Do you want to power on/off more WIBs? (y/n): ")
             if more.lower() != 'y':
@@ -165,17 +165,17 @@ def wib_power():
         print(f"\n--- WIB {wib} ---")
         print(output)
 
-    powered_on_wibs = {wib: state for wib, state in wibs.items() if state == "ON"}
+    powered_on_wibs = {wib: state for wib, state in wibs.items() if state == "on"}
     if not powered_on_wibs:
         print("No WIBs requested ON; power command completed.")
         return True
 
     sensor_outputs = WIEC_SERIAL.sensors_addr(ser, powered_on_wibs)
     print(sensor_outputs)
-    #i2c_passed = validate_wib_i2c_outputs(powered_on_wibs, sensor_outputs)
-    #ip_passed = validate_wib_ip_outputs(powered_on_wibs, power_outputs, sensor_outputs)
-    #return i2c_passed and ip_passed
-    return True
+    i2c_passed = validate_wib_i2c_outputs(powered_on_wibs, sensor_outputs)
+    ip_passed = validate_wib_ip_outputs(powered_on_wibs, power_outputs, sensor_outputs)
+    return i2c_passed and ip_passed
+    #return True
 
     # power_outputs = WIEC_SERIAL.power_wib(ser, wibs)
     # print("\nPower control outputs:")
@@ -191,7 +191,6 @@ def main():
     wib_power()
 
     
-
 
 
 
