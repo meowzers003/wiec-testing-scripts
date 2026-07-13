@@ -9,7 +9,7 @@ import time
 import wiec_serial as WIEC_SERIAL
 
 
-VALID_POWER_STATES = {"ON", "OFF"}
+VALID_POWER_STATES = {"on", "off"}
 WIB_IP_PREFIX = "10.73.137"
 WIB_IP_LAST_OCTET_BASE = 71
 
