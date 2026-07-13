@@ -1,7 +1,7 @@
 import re
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 
 @dataclass
@@ -150,8 +150,8 @@ class PL506:
         channel,
         voltage_v,
         current_limit_a,
-        max_voltage_v=50.0,
-        max_current_a=12.5,
+        max_voltage_v=30.0,
+        max_current_a=5.0,
         settle_s=1.0,
     ):
         if not (0.0 <= voltage_v <= max_voltage_v):
@@ -168,4 +168,4 @@ class PL506:
         self.channel_on(channel)
 
         time.sleep(settle_s)
-        return self.read_channel(channel)
+        return asdict(self.read_channel(channel))
