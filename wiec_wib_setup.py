@@ -124,6 +124,7 @@ def validate_wib_ip_outputs(wibs, power_outputs, sensor_outputs):
 def wib_power():
     # globals so they wont initialize upon import 
     global ser, wibs
+    time.sleep(100)  # wait for the Zynq to boot up and be ready for commands
     ser = WIEC_SERIAL.login()
     # userinput = input("is serial out empty?:")
     # while userinput != "yes":
