@@ -67,23 +67,22 @@ def initialize_wiec():
 
     # turn on PL506 channel for PTC power supply since fan is confirmed to be working
     readback = turn_on_pl506()
+    print(readback)
     
-    if readback[measured_current_a] == 0.0 or readback[terminal_voltage_v] == 0.0 :
+    if readback.get("measured_current_a",0.0) == 0.0 or readback.get("terminal_voltage_v",0.0) == 0.0 :
         print("error. PTC power is not on. will try again 3x times")
         # error turning on power supply, redo it x3
         i=0
         while i != 3:
             print(f"Retry Attempt # {i+1}")
             readback = turn_on_pl506()
-            if readback[measured_current_a] != 0.0 and readback[terminal_voltage_v] != 0.0 :
+            if readback.get("measured_current_a",0.0) == 0.0 or readback.get("terminal_voltage_v",0.0) == 0.0 :
                 print(f" --> PL506 channel {json_data['PL506_channel']} turned on with readback information:")
                 print(readback)
                 return True
             else:
-                i+=1
-            
+                i+=1            
                                                     
-        
     print(f" --> PL506 channel {json_data['PL506_channel']} turned on with readback information:")
     print(readback)
     return True
