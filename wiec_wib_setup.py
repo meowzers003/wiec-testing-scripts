@@ -29,7 +29,7 @@ def normalize_wib_number(wib_number):
 
 def normalize_power_state(state):
     state = WIEC_SERIAL.sanitize_terminal_text(state)
-    state = str(state).strip().upper()
+    state = str(state).strip().lower()
     if state not in VALID_POWER_STATES:
         raise ValueError(f"Power state must be ON or OFF, got {state!r}")
     return state
