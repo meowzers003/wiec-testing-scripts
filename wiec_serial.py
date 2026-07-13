@@ -277,6 +277,7 @@ def run_petalinux_command(ser, command, timeout=10):
 # function to collect output resposnse 
 def login(): # func to just login
     check_host_serial_device()
+    time.sleep(100)  # wait for the Zynq to boot up and be ready for commands
     ser = login_petalinux()
     set_date(ser)
     return ser
