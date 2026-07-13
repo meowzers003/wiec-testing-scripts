@@ -301,7 +301,7 @@ def set_timing(ser):
     """
     Sets the timing parameter on the PetaLinux shell.
     """
-    output = run_petalinux_command(ser, "python3 setup_timing.py")
+    output = run_petalinux_command(ser, "python setup_timing.py")
     print(output)
 
 
@@ -317,10 +317,11 @@ def power_wib(ser, wibs):
         output = run_petalinux_command(ser, command)
         print(output)
         outputs[wib] = output
-        
+    print(output)
     # user prompted wait 
     userinput = "no"
     while userinput != "go":
+        print(output)
         userinput = input("continue?")
 
     return outputs
