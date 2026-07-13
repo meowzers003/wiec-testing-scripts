@@ -171,6 +171,7 @@ def wib_power():
         return True
 
     WIEC_SERIAL.run_ecat_soft_timeout_then_i2cdetect(ser)
+    time.sleep(45)
     sensor_outputs = WIEC_SERIAL.sensors_addr(ser, powered_on_wibs)
     print(sensor_outputs)
     i2c_passed = validate_wib_i2c_outputs(powered_on_wibs, sensor_outputs)
