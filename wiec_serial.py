@@ -30,6 +30,8 @@ def check_host_serial_device():
         capture_output=True,
         text=True
     )
+    
+    time.sleep(20)
 
     available_ports = result.stdout.strip().splitlines()
 
@@ -100,7 +102,7 @@ def login_petalinux():
         ser = serial.Serial(
             DEVICE,
             BAUDRATE,
-            timeout=0.2,
+            timeout=1,
             write_timeout=1
         )
     except PermissionError:
@@ -120,7 +122,7 @@ def login_petalinux():
     output, matched = read_until_any(
         ser,
         keywords=["login:", "password:", "#", "$", "ZynqMP>"],
-        timeout=20
+        timeout=300
     )
 
     if matched is None:
@@ -158,13 +160,13 @@ def login_petalinux():
     if matched.lower() == "login:":
         print("Sending username...")
         send_line(ser, USERNAME)
-        output, matched = read_until_any(ser, keywords=["password:", "#", "$"], timeout=10)
+        #output, matched = read_until_any(ser, keywords=["password:", "#", "$"], timeout=10)
 
     # Password prompt
-    if matched and matched.lower() == "password:":
-        print("Sending password...")
-        send_line(ser, PASSWORD)
-        output, matched = read_until_any(ser, keywords=["#", "$", "login incorrect"], timeout=10)
+ #   if matched and matched.lower() == "password:":
+  #      print("Sending password...")
+   #     send_line(ser, PASSWORD)
+   #     output, matched = read_until_any(ser, keywords=["#", "$", "login incorrect"], timeout=10)
 
     if matched is None or "login incorrect" in output.lower():
         print("Login failed.")
@@ -222,6 +224,11 @@ def power_wib(ser, wibs):
         output = run_petalinux_command(ser, command)
         print(output)
         outputs[wib] = output
+        
+    # user prompted wait 
+    userinput = "no"
+    while userinput != "go":
+        userinput = input("continue?")
 
     return outputs
 
@@ -230,9 +237,19 @@ def sensors_addr(ser, wibs):
     for wib, power_state in wibs.items():
         print(f"Getting sensor output for WIB {wib}...")
         switch_output = run_petalinux_command(ser, f"i2cset -y 2 0x7{wib} 0x0002")
-        detect_output = run_petalinux_command(ser, f"i2cdetect -y -r 2")
         print(switch_output)
+        # user prompted wait 
+        userinput = "no"
+        while userinput != "go":
+            userinput = input("continue?") 
+    	           
+    	           
+        detect_output = run_petalinux_command(ser, f"i2cdetect -y -r 2")       
         print(detect_output)
+        userinput = "no"
+        while userinput != "go":
+            userinput = input("continue?") 
+    	           
         sensor_outputs[wib] = {
             "i2cset": switch_output,
             "i2cdetect": detect_output,
