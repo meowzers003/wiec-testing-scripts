@@ -288,6 +288,47 @@ def run_petalinux_command(ser, command, timeout=10):
     return output
 
 
+def run_ecat_soft_timeout_then_i2cdetect(
+    ser,
+    command="python3 ecat_test1b.py logfile.txt",
+    soft_timeout=65,
+    settle_time=45,
+):
+    """
+    Run the ecat command briefly, stop it with Ctrl-Z, then scan I2C bus 2.
+    The Ctrl-Z stop is intentionally treated as normal flow for QC.
+    """
+    if ser.in_waiting:
+        ser.read(ser.in_waiting)
+
+    print(f"Running {command} for {soft_timeout} seconds...")
+    send_line(ser, command)
+
+    start_time = time.time()
+    while time.time() - start_time < soft_timeout:
+        if ser.in_waiting:
+            raw = ser.read(ser.in_waiting)
+            _ = sanitize_terminal_text(raw.decode(errors="ignore"))
+        time.sleep(0.1)
+
+    ser.write(b"\x1a")
+    ser.flush()
+    time.sleep(1)
+
+    if ser.in_waiting:
+        raw = ser.read(ser.in_waiting)
+        stopped_output = sanitize_terminal_text(raw.decode(errors="ignore"))
+        if stopped_output.strip():
+            print(stopped_output)
+
+    print(f"Waiting {settle_time} seconds before I2C scan...")
+    time.sleep(settle_time)
+
+    detect_output = run_petalinux_command(ser, "i2cdetect -y -r 2", timeout=15)
+    print(detect_output)
+    return detect_output
+
+
 
 # function to collect output resposnse 
 def login(): # func to just login
