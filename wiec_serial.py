@@ -3,6 +3,7 @@
 import sys
 import time
 import glob
+import re
 
 
 try:
@@ -20,6 +21,19 @@ USB_PORT_SCAN_STORED = False
 BAUDRATE = 115200
 USERNAME = "root"
 PASSWORD = "root"
+
+ANSI_ESCAPE_RE = re.compile(
+    r"\x1b\[[0-?]*[ -/]*[@-~]"
+    r"|\x1b\][^\x07]*(?:\x07|\x1b\\)"
+    r"|\x1b[@-Z\\-_]"
+)
+
+
+def sanitize_terminal_text(text):
+    """
+    Remove ANSI terminal control sequences from text read over serial or stdin.
+    """
+    return ANSI_ESCAPE_RE.sub("", str(text))
 
 
 def scan_host_usb_serial_ports():
@@ -147,6 +161,7 @@ def read_until_any(ser, keywords, timeout=40):
         if waiting:
             raw = ser.read(waiting)
             text = raw.decode(errors="ignore")
+            text = sanitize_terminal_text(text)
             buffer += text
 
             lower_buffer = buffer.lower()

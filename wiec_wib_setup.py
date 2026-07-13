@@ -15,6 +15,7 @@ WIB_IP_LAST_OCTET_BASE = 71
 
 
 def normalize_wib_number(wib_number):
+    wib_number = WIEC_SERIAL.sanitize_terminal_text(wib_number)
     wib_number = str(wib_number).strip()
     if not wib_number.isdigit():
         raise ValueError(f"WIB number must be an integer 0-5, got {wib_number!r}")
@@ -27,10 +28,15 @@ def normalize_wib_number(wib_number):
 
 
 def normalize_power_state(state):
+    state = WIEC_SERIAL.sanitize_terminal_text(state)
     state = str(state).strip().upper()
     if state not in VALID_POWER_STATES:
         raise ValueError(f"Power state must be ON or OFF, got {state!r}")
     return state
+
+
+def clean_input(prompt):
+    return WIEC_SERIAL.sanitize_terminal_text(input(prompt)).strip()
 
 
 def i2cdetect_addresses(output):
@@ -137,19 +143,19 @@ def wib_power():
 
 
     # asks user the wib # of interest to power on/off
-    wib_number = normalize_wib_number(input("Enter the WIB number you want to power on/off: "))
+    wib_number = normalize_wib_number(clean_input("Enter the WIB number you want to power on/off: "))
     wibs[wib_number] = "OFF"  # Initialize with None
-    state = normalize_power_state(input(f"Enter the power state (ON/OFF) for WIB {wib_number}: "))
+    state = normalize_power_state(clean_input(f"Enter the power state (ON/OFF) for WIB {wib_number}: "))
     wibs[wib_number] = state  # Store the state in uppercase
 
-    more = input("Do you want to power on/off more WIBs? (y/n): ")
+    more = clean_input("Do you want to power on/off more WIBs? (y/n): ")
     if more.lower() == 'y':
         while True:
-            wib_number = normalize_wib_number(input("Enter the WIB number you want to power on/off: "))
+            wib_number = normalize_wib_number(clean_input("Enter the WIB number you want to power on/off: "))
             wibs[wib_number] = "OFF"
-            state = normalize_power_state(input(f"Enter the power state (ON/OFF) for WIB {wib_number}: "))
+            state = normalize_power_state(clean_input(f"Enter the power state (ON/OFF) for WIB {wib_number}: "))
             wibs[wib_number] = state
-            more = input("Do you want to power on/off more WIBs? (y/n): ")
+            more = clean_input("Do you want to power on/off more WIBs? (y/n): ")
             if more.lower() != 'y':
                 break
     
@@ -185,7 +191,6 @@ def main():
     wib_power()
 
     
-
 
 
 
