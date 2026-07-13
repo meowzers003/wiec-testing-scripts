@@ -4,7 +4,7 @@ import subprocess
 import os
 import sys
 import re
-
+import time 
 #### ----------------------------------------------------------------------------
 import wiec_serial as WIEC_SERIAL
 
@@ -125,11 +125,12 @@ def wib_power():
     # globals so they wont initialize upon import 
     global ser, wibs
     ser = WIEC_SERIAL.login()
-    userinput = input("is serial out empty?:")
-    while userinput != "yes":
-        ser = WIEC_SERIAL.login()
-        userinput = input("is serial out empty?:")
+    # userinput = input("is serial out empty?:")
+    # while userinput != "yes":
+    #     ser = WIEC_SERIAL.login()
+    #     userinput = input("is serial out empty?:")
 
+    time.sleep(100)  # wait for the Zynq to boot up and be ready for commands
     
     wibs = {} # key is wib number, value is power state (ON/OFF)
 
