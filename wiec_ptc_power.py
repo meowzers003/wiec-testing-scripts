@@ -9,12 +9,23 @@ import pyvisa
 # device classes
 from keysight_daq970a import Keysight970A
 from rigol_dp832a import RigolDP832A
-from caen_r8033dm_wrapper import CAENR8033DM_WRAPPER
 from pl506 import PL506
 
 # fans_on = True # unnecessary since there's blocking logic
 
 ptc_initialized = False  # global variable to track if PTC hardware has been initialized
+
+
+
+def turn_on_pl506():
+    readback = pl506.safe_turn_on_channel(channel=json_data["PL506_channel"],
+                                                max_voltage_v=json_data["PL506_voltage_max"],
+                                                voltage_v=json_data["PL506_sense_voltage"],
+                                                max_current_a=json_data["PL506_current_max"],
+                                                current_limit_a=json_data["PL506_current_limit"],
+                                                settle_s=json_data["PL506_settle_seconds"])
+    return readback
+
 
 def initialize_wiec():
     # initialization little guys 
@@ -55,12 +66,23 @@ def initialize_wiec():
             return False # end func execution early upon error
 
     # turn on PL506 channel for PTC power supply since fan is confirmed to be working
-    readback = pl506.safe_turn_on_channel(channel=json_data["PL506_channel"],
-                                                max_voltage_v=json_data["PL506_voltage_max"],
-                                                voltage_v=json_data["PL506_sense_voltage"],
-                                                max_current_a=json_data["PL506_current_max"],
-                                                current_limit_a=json_data["PL506_current_limit"],
-                                                settle_s=json_data["PL506_settle_seconds"])
+    readback = turn_on_pl506()
+    
+    if readback[measured_current_a] == 0.0 or readback[terminal_voltage_v] == 0.0 :
+        print("error. PTC power is not on. will try again 3x times")
+        # error turning on power supply, redo it x3
+        i=0
+        while i != 3:
+            print(f"Retry Attempt # {i+1}")
+            readback = turn_on_pl506()
+            if readback[measured_current_a] != 0.0 and readback[terminal_voltage_v] != 0.0 :
+                print(f" --> PL506 channel {json_data['PL506_channel']} turned on with readback information:")
+                print(readback)
+                return True
+            else:
+                i+=1
+            
+                                                    
         
     print(f" --> PL506 channel {json_data['PL506_channel']} turned on with readback information:")
     print(readback)
@@ -81,7 +103,6 @@ def shutdown_wiec():
     r1.power("OFF", "fanread")
     return True
     
-
 
 
 
