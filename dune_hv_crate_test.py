@@ -84,6 +84,7 @@ class LDOmeasure:
         
 
         try:
+         # hv test works with GUI, uncommented for now until wiec qc flow completely works (for the sake of debugging time)
             self.fan_test()
             self.wb.save(self.path_to_spreadsheet)
 
@@ -92,7 +93,7 @@ class LDOmeasure:
 
             self.heater_test()
             self.wb.save(self.path_to_spreadsheet)
-
+         
             self.hv_test() #add'l specific exceptions are handled within 
 
             # self.initialize_wiec() # turn on PTC power supply and fans
