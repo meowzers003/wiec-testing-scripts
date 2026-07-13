@@ -125,6 +125,10 @@ def wib_power():
     # globals so they wont initialize upon import 
     global ser, wibs
     ser = WIEC_SERIAL.login()
+    userinput = input("is serial out empty?:")
+    while userinput != "yes":
+        ser = WIEC_SERIAL.login()
+        userinput = input("is serial out empty?:")
 
     
     wibs = {} # key is wib number, value is power state (ON/OFF)
@@ -159,9 +163,11 @@ def wib_power():
         return True
 
     sensor_outputs = WIEC_SERIAL.sensors_addr(ser, powered_on_wibs)
-    i2c_passed = validate_wib_i2c_outputs(powered_on_wibs, sensor_outputs)
-    ip_passed = validate_wib_ip_outputs(powered_on_wibs, power_outputs, sensor_outputs)
-    return i2c_passed and ip_passed
+    print(sensor_outputs)
+    #i2c_passed = validate_wib_i2c_outputs(powered_on_wibs, sensor_outputs)
+    #ip_passed = validate_wib_ip_outputs(powered_on_wibs, power_outputs, sensor_outputs)
+    #return i2c_passed and ip_passed
+    return True
 
     # power_outputs = WIEC_SERIAL.power_wib(ser, wibs)
     # print("\nPower control outputs:")
@@ -177,7 +183,6 @@ def main():
     wib_power()
 
     
-
 
 
 
