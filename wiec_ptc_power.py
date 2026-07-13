@@ -6,10 +6,12 @@ import traceback
 import json
 import pyvisa
 
+
 # device classes
 from keysight_daq970a import Keysight970A
 from rigol_dp832a import RigolDP832A
 from pl506 import PL506
+import wiec_serial
 
 # fans_on = True # unnecessary since there's blocking logic
 
@@ -31,6 +33,7 @@ def initialize_wiec():
     # initialization little guys 
     # set up configurations
     global json_data, rm, r0, r1, k, pl506, ptc_initialized # doesnt initialize upon import
+    wiec_serial.store_current_usb_ports() # do a usb port scan before turning on ptc zynq s
     json_data = None
     with open('config.json') as jsonfile:
         json_data = json.load(jsonfile)
@@ -102,7 +105,6 @@ def shutdown_wiec():
     r1.power("OFF", "fanread")
     return True
     
-
 
 
 

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
-import os
 import sys
 import time
-import subprocess
+import glob
 
 
 try:
@@ -16,27 +15,98 @@ except ImportError:
 
 DEVICES = ["/dev/ttyUSB0","/dev/ttyUSB1"]
 DEVICE = "/dev/ttyUSB0"
+KNOWN_USB_PORTS = set()
+USB_PORT_SCAN_STORED = False
 BAUDRATE = 115200
 USERNAME = "root"
 PASSWORD = "root"
 
 
-def check_host_serial_device():
+def scan_host_usb_serial_ports():
+    """
+    Return currently available USB/ACM serial ports on the host computer.
+    """
+    ports = glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*")
+    return sorted(set(ports))
+
+
+def store_current_usb_ports(available_ports=None):
+    """
+    Store the USB/ACM serial ports present before the Zynq is powered on.
+    """
+    global KNOWN_USB_PORTS, USB_PORT_SCAN_STORED
+    if available_ports is None:
+        available_ports = scan_host_usb_serial_ports()
+
+    KNOWN_USB_PORTS = set(available_ports)
+    USB_PORT_SCAN_STORED = True
+    print("Stored current USB serial ports:")
+    if KNOWN_USB_PORTS:
+        for port in sorted(KNOWN_USB_PORTS):
+            print(f"  {port}")
+    else:
+        print("  None")
+
+    return KNOWN_USB_PORTS.copy()
+
+
+def check_host_serial_device(timeout=100, poll_interval=1):
     """
     This checks the Ubuntu host computer, not the Zynq.
-    Equivalent idea to running: ls /dev/tty*
+    If store_current_usb_ports() was called before power-up, the first new
+    USB/ACM serial port is treated as the Zynq device port.
     """
     global DEVICE
-    result = subprocess.run(
-        ["bash", "-lc", "ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null"],
-        capture_output=True,
-        text=True
-    )
-    
-    time.sleep(20)
 
-    available_ports = result.stdout.strip().splitlines()
-    none = False
+    start_time = time.time()
+    available_ports = []
+    new_ports = []
+
+    if USB_PORT_SCAN_STORED:
+        while time.time() - start_time <= timeout:
+            available_ports = scan_host_usb_serial_ports()
+            new_ports = sorted(set(available_ports) - KNOWN_USB_PORTS)
+
+            if new_ports:
+                DEVICE = new_ports[0]
+                if len(new_ports) > 1:
+                    print("Multiple new USB serial ports were found:")
+                    for port in new_ports:
+                        print(f"  {port}")
+                    print(f"Using first new port as Zynq serial device: {DEVICE}")
+                else:
+                    print(f"Found new Zynq serial device: {DEVICE}")
+                return None
+
+            time.sleep(poll_interval)
+
+        print("Zynq serial device was not found as a new USB port.")
+        print("Previously known USB serial ports:")
+        if KNOWN_USB_PORTS:
+            for port in sorted(KNOWN_USB_PORTS):
+                print(f"  {port}")
+        else:
+            print("  None")
+
+        print("Detected serial-like ports:")
+        if available_ports:
+            for port in available_ports:
+                print(f"  {port}")
+        else:
+            print("  None")
+
+        print("\nCheck that the Zynq board USB cable is connected and that PTC power is on.")
+        sys.exit(1)
+
+    available_ports = scan_host_usb_serial_ports()
+    print("No stored pre-power USB scan was found. Falling back to legacy device names.")
+    print("Detected serial-like ports:")
+    if available_ports:
+        for port in available_ports:
+            print(f"  {port}")
+    else:
+        print("  None")
+
     for dev in DEVICES:
         if dev not in available_ports:
             print("Zynq serial device was not found.")
