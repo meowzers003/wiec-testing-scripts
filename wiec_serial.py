@@ -360,10 +360,11 @@ def power_wib(ser, wibs):
         outputs[wib] = output
     print(output)
     # user prompted wait 
-    userinput = "no"
-    while userinput != "go":
-        print(output)
-        userinput = input("continue?")
+    # userinput = "no"
+    # while userinput != "go":
+    #     print(output)
+    #     userinput = input("continue?")
+    time.sleep(70)
 
     return outputs
 
@@ -373,17 +374,19 @@ def sensors_addr(ser, wibs):
         print(f"Getting sensor output for WIB {wib}...")
         switch_output = run_petalinux_command(ser, f"i2cset -y 2 0x7{wib} 0x0002")
         print(switch_output)
-        # user prompted wait 
-        userinput = "no"
-        while userinput != "go":
-            userinput = input("continue?") 
+        # # user prompted wait 
+        # userinput = "no"
+        # while userinput != "go":
+        #     userinput = input("continue?") 
+        time.sleep(70)
     	           
     	           
         detect_output = run_petalinux_command(ser, f"i2cdetect -y -r 2")       
         print(detect_output)
-        userinput = "no"
-        while userinput != "go":
-            userinput = input("continue?") 
+        # userinput = "no"
+        # while userinput != "go":
+        #     userinput = input("continue?") 
+        time.sleep(70)
     	           
         sensor_outputs[wib] = {
             "i2cset": switch_output,
