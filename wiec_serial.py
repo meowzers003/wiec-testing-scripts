@@ -14,6 +14,7 @@ except ImportError:
     sys.exit(1)
 
 
+DEVICES = ["/dev/ttyUSB0","/dev/ttyUSB1"]
 DEVICE = "/dev/ttyUSB0"
 BAUDRATE = 115200
 USERNAME = "root"
@@ -25,6 +26,7 @@ def check_host_serial_device():
     This checks the Ubuntu host computer, not the Zynq.
     Equivalent idea to running: ls /dev/tty*
     """
+    global DEVICE
     result = subprocess.run(
         ["bash", "-lc", "ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null"],
         capture_output=True,
@@ -34,21 +36,26 @@ def check_host_serial_device():
     time.sleep(20)
 
     available_ports = result.stdout.strip().splitlines()
-
-    if DEVICE not in available_ports:
-        print("Zynq serial device was not found.")
-        print("Detected serial-like ports:")
-        if available_ports:
-            for port in available_ports:
-                print(f"  {port}")
+    none = False
+    for dev in DEVICES:
+        if dev not in available_ports:
+            print("Zynq serial device was not found.")
+            print("Detected serial-like ports:")
+            if available_ports:
+                for port in available_ports:
+                    print(f"  {port}")
+            else:
+                print("  None")
         else:
-            print("  None")
+            print(f"Found Zynq serial device: {dev}")
+            DEVICE = dev
+            return None
 
-        print(f"\nExpected: {DEVICE}")
-        print("Check that the Zynq board USB cable is connected.")
-        sys.exit(1)
+    print(f"\nExpected: {DEVICES}")
+    print("Check that the Zynq board USB cable is connected.")
+    sys.exit(1)
 
-    print(f"Found Zynq serial device: {DEVICE}")
+    #print(f"Found Zynq serial device: {DEVICE}")
 
 
 def read_until_any(ser, keywords, timeout=40):
