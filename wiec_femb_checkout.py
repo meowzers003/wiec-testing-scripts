@@ -17,7 +17,7 @@ QC_PACKAGE_DIR = os.path.join(BASE_DIR, 'BNL_CE_WIB_SW_QC')
 if QC_PACKAGE_DIR not in sys.path:
     sys.path.insert(0, QC_PACKAGE_DIR)
 
-from BNL_CE_WIB_SW_QC import cts_ssh_FEMB as cts
+# from BNL_CE_WIB_SW_QC import cts_ssh_FEMB as cts
 
 from BNL_CE_WIB_SW_QC.qc_utils import QC_Process
 from BNL_CE_WIB_SW_QC.qc_results import analyze_test_results, display_qc_results
@@ -257,6 +257,31 @@ def generate_result_summary(inform, data_path, report_path):
 #         print_status('error', f"Failed to send email: {email_err}")
 #         return False
 
+# Function 01 CSV Read
+def read_csv_to_dict(filename, env, p=False):
+    data = {}
+    with open(filename, mode='r', newline='', encoding='utf-8-sig') as file:
+        reader = csv.reader(file)
+        # headers = next(reader)
+        for row in reader:
+            if len(row) >= 2:
+                key = row[0]
+                if row[1] == '':
+                    row[1] = ' '
+                value = row[1]
+                data[key] = value
+            if p:
+                print("\033[96m" + key + "\t\t:\t\t" + data[key] + "\033[0m")
+    if env == 'LN':
+        data['env'] = 'y'
+        if p:
+            print("\033[96m" + 'environment' + "\t:\t\t" + data['env'] + '(Cold)' + "\033[0m")
+    else:
+        data['env'] = 'n'
+        if p:
+            print("\033[96m" + 'environment' + "\t:\t\t" + data['env'] + '(Warm)' + "\033[0m")
+    return data
+
 
 def main():
     """Main checkout workflow"""
@@ -337,7 +362,7 @@ def main():
     tester_email = info.get("tester_email", "Unknown")
     femb_ids = info.get("femb_ids", {})
     save_config(tester_name, tester_email, femb_ids, init_config)
-    inform = cts.read_csv_to_dict(CSV_FILE, 'RT')
+    inform = read_csv_to_dict(CSV_FILE, 'RT')
 
     
     # Step 4: Run checkout test
