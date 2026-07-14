@@ -213,6 +213,12 @@ class IsegMPOD:
 
         if not channels:
             raise RuntimeError("No output channels found from outputIndex/outputName records.")
+        
+        # skip channels U200-207 for now, seems sussy
+        channels = [
+            channel for channel in channels
+            if not 200 <= int(channel[1:]) <= 207
+        ]
 
         channels.sort(key=lambda channel: int(channel[1:]))
         print(f"Found {len(channels)} output channels:")
