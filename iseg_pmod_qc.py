@@ -8,7 +8,7 @@ import csv
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 
 RESULTS_DIR = Path.cwd() / "iseg_qc_results"
@@ -20,19 +20,17 @@ CHANNEL_PARAMETERS = [
     ("set_current_A", "set current [A]"),
     ("measured_current_A", "measured current [A]"),
     ("ramp_up_V_per_s", "ramp up [V/s]"),
-    ("ramp_down_V_per_s", "ramp down [V/s]"),
 ]
 
 
 @dataclass
 class SNMPConfig:
     ip: str
-    mib_path: str = "/usr/share/snmp/mibs"
     mib_name: str = "+WIENER-CRATE-MIB"
     read_community: str = "public"
     write_community: str = "guru"
     version: str = "2c"
-    timeout_s: int = 5
+    timeout_s: int = 30
 
 
 class IsegMPOD:
@@ -60,101 +58,96 @@ class IsegMPOD:
                 f"STDERR: {e.stderr}"
             )
 
-    def snmpget(self, oid: str, community: Optional[str] = None, quiet: bool = True) -> str:
-        community = community or self.cfg.read_community
-        args = [
-            "snmpget",
+    def _command_args(self, command: str, community: str) -> List[str]:
+        # Command form documented in MPOD HV manual section 4.4.
+        return [
+            command,
             "-v", self.cfg.version,
-            "-M", self.cfg.mib_path,
             "-m", self.cfg.mib_name,
             "-c", community,
+            self.cfg.ip,
         ]
-        if quiet:
-            args.append("-OqvU")
-        args += [self.cfg.ip, oid]
-        return self._run(args)
 
-    def snmpwalk(self, oid: str, community: Optional[str] = None, quiet: bool = False) -> str:
-        community = community or self.cfg.read_community
-        args = [
-            "snmpwalk",
-            "-v", self.cfg.version,
-            "-M", self.cfg.mib_path,
-            "-m", self.cfg.mib_name,
-            "-c", community,
-        ]
-        if quiet:
-            args.append("-OqvU")
-        args += [self.cfg.ip, oid]
-        return self._run(args)
+    @staticmethod
+    def parse_walk_output(raw: str) -> Dict[str, str]:
+        """Parse section 4.4's '<MIB>::<OID> = <TYPE>: <value>' output."""
+        entries: Dict[str, str] = {}
+        for line in raw.splitlines():
+            match = re.match(r"^\S+::([^\s=]+)\s*=\s*(.+)$", line.strip())
+            if match:
+                entries[match.group(1)] = match.group(2).strip()
+        return entries
+
+    @staticmethod
+    def display_value(encoded_value: str) -> str:
+        value = encoded_value.strip()
+
+        float_match = re.search(
+            r"(?:Opaque:\s*)?Float:\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?)",
+            value,
+            re.IGNORECASE,
+        )
+        if float_match:
+            return float_match.group(1)
+
+        if value.upper().startswith("STRING:"):
+            return value.split(":", 1)[1].strip().strip('"')
+
+        return value
+
+    def read_all(self) -> Dict[str, str]:
+        raw = self._run(self._command_args("snmpwalk", self.cfg.read_community))
+        entries = self.parse_walk_output(raw)
+        if not entries:
+            raise RuntimeError(
+                "The full snmpwalk returned no parseable 'OID = TYPE: value' records."
+            )
+        return entries
 
     def snmpset_float(self, oid: str, value: float) -> str:
-        return self._run([
-            "snmpset",
-            "-OqvU",
-            "-v", self.cfg.version,
-            "-M", self.cfg.mib_path,
-            "-m", self.cfg.mib_name,
-            "-c", self.cfg.write_community,
-            self.cfg.ip,
-            oid,
-            "F",
-            str(value),
-        ])
+        return self._run(
+            self._command_args("snmpset", self.cfg.write_community)
+            + [oid, "F", str(value)]
+        )
 
     def snmpset_int(self, oid: str, value: int) -> str:
-        return self._run([
-            "snmpset",
-            "-OqvU",
-            "-v", self.cfg.version,
-            "-M", self.cfg.mib_path,
-            "-m", self.cfg.mib_name,
-            "-c", self.cfg.write_community,
-            self.cfg.ip,
-            oid,
-            "i",
-            str(value),
-        ])
+        return self._run(
+            self._command_args("snmpset", self.cfg.write_community)
+            + [oid, "i", str(value)]
+        )
 
     # ------------------------------------------------------------
     # a. Confirm MPOD crate presence and firmware info
     # ------------------------------------------------------------
 
-    def check_crate(self) -> Dict[str, str]:
+    def check_crate(self, snapshot: Dict[str, str]) -> Dict[str, str]:
         print("\n=== Checking MPOD crate ===")
 
-        # Basic identity
-        sys_descr = self.snmpget("sysDescr.0", quiet=False)
-
-        # Full crate walk confirms SNMP presence
-        crate_tree = self.snmpwalk("crate", quiet=False)
+        sys_descr_raw = snapshot.get("sysDescr.0")
+        if not sys_descr_raw:
+            raise RuntimeError("sysDescr.0 was not present in the full snmpwalk output.")
+        sys_descr = self.display_value(sys_descr_raw)
 
         print("sysDescr:")
         print(sys_descr)
-        print("\nCrate SNMP tree successfully read.")
+        print(f"\nParsed {len(snapshot)} records from the crate SNMP walk.")
 
         return {
             "sysDescr": sys_descr,
-            "crate_tree_present": "True" if crate_tree else "False",
+            "crate_tree_present": "True",
         }
 
     # ------------------------------------------------------------
     # b. Confirm HV module presence: serial number, firmware number
     # ------------------------------------------------------------
 
-    def discover_modules(self) -> Dict[str, str]:
+    def discover_modules(self, snapshot: Dict[str, str]) -> Dict[str, str]:
         print("\n=== Discovering modules ===")
-
-        raw = self.snmpwalk("moduleDescription", quiet=False)
         modules = {}
 
-        for line in raw.splitlines():
-            # Example form:
-            # WIENER-CRATE-MIB::moduleDescription.ma2 = STRING: "iseg ..."
-            if "moduleDescription" in line:
-                left, _, right = line.partition("=")
-                oid = left.strip().split("::")[-1].strip()
-                desc = right.strip()
+        for oid, encoded_value in snapshot.items():
+            if oid.startswith("moduleDescription."):
+                desc = self.display_value(encoded_value)
                 modules[oid] = desc
                 print(f"{oid}: {desc}")
 
@@ -167,22 +160,19 @@ class IsegMPOD:
     # Discover all HV channel indices
     # ------------------------------------------------------------
 
-    def discover_channels(self) -> List[str]:
+    def discover_channels(self, snapshot: Dict[str, str]) -> List[str]:
         print("\n=== Discovering output channels ===")
-
-        raw = self.snmpwalk("outputName", quiet=False)
         channels = []
 
-        for line in raw.splitlines():
-            # Example:
-            # WIENER-CRATE-MIB::outputName.u100 = STRING: U100
-            match = re.search(r"outputName\.(u\d+)", line)
+        for oid in snapshot:
+            match = re.fullmatch(r"outputName\.(u\d+)", oid)
             if match:
                 channels.append(match.group(1))
 
         if not channels:
             raise RuntimeError("No output channels found from outputName walk.")
 
+        channels.sort(key=lambda channel: int(channel[1:]))
         print(f"Found {len(channels)} output channels:")
         print(", ".join(channels))
 
@@ -192,21 +182,20 @@ class IsegMPOD:
     # c. Confirm no communication errors or hardware alarms
     # ------------------------------------------------------------
 
-    def check_module_health(self) -> bool:
+    def check_module_health(self, snapshot: Dict[str, str]) -> bool:
         print("\n=== Checking module health ===")
+        status_entries = {
+            oid: value
+            for oid, value in snapshot.items()
+            if oid.startswith((
+                "moduleStatus.",
+                "moduleEventStatus.",
+                "moduleEventChannelStatus.",
+            ))
+        }
 
-        module_status_raw = self.snmpwalk("moduleStatus", quiet=False)
-        module_event_raw = self.snmpwalk("moduleEventStatus", quiet=False)
-        module_event_channel_raw = self.snmpwalk("moduleEventChannelStatus", quiet=False)
-
-        print("\nmoduleStatus:")
-        print(module_status_raw)
-
-        print("\nmoduleEventStatus:")
-        print(module_event_raw)
-
-        print("\nmoduleEventChannelStatus:")
-        print(module_event_channel_raw)
+        for oid, value in status_entries.items():
+            print(f"{oid}: {value}")
 
         bad_keywords = [
             "moduleNeedService",
@@ -221,7 +210,7 @@ class IsegMPOD:
             "moduleEventTemperatureNotGood",
         ]
 
-        combined = "\n".join([module_status_raw, module_event_raw, module_event_channel_raw])
+        combined = "\n".join(status_entries.values())
 
         failed = [kw for kw in bad_keywords if kw in combined]
 
@@ -234,14 +223,20 @@ class IsegMPOD:
         print("\nPASS: No obvious module communication errors or hardware alarms detected.")
         return True
 
-    def check_channel_health(self, channels: List[str]) -> bool:
+    def check_channel_health(
+        self, channels: List[str], snapshot: Dict[str, str]
+    ) -> bool:
         print("\n=== Checking channel health ===")
 
         all_ok = True
 
         for ch in channels:
-            status = self.snmpget(f"outputStatus.{ch}", quiet=False)
+            status = snapshot.get(f"outputStatus.{ch}", "MISSING")
             print(f"{ch}: {status}")
+
+            if status == "MISSING":
+                all_ok = False
+                continue
 
             bad_keywords = [
                 "outputFailure",
@@ -266,27 +261,38 @@ class IsegMPOD:
     # d. Readback voltage and current settings
     # ------------------------------------------------------------
 
-    def read_channel_settings(self, channels: List[str]) -> Dict[str, Dict[str, str]]:
+    def read_channel_settings(
+        self, channels: List[str], snapshot: Dict[str, str]
+    ) -> Dict[str, Dict[str, str]]:
         print("\n=== Reading voltage/current settings and measurements ===")
 
         data = {}
 
         for ch in channels:
-            set_v = self.snmpget(f"outputVoltage.{ch}")
-            set_i = self.snmpget(f"outputCurrent.{ch}")
-            meas_v = self.snmpget(f"outputMeasurementTerminalVoltage.{ch}")
-            meas_i = self.snmpget(f"outputMeasurementCurrent.{ch}")
-            ramp_up = self.snmpget(f"outputVoltageRiseRate.{ch}")
-            ramp_down = self.snmpget(f"outputVoltageFallRate.{ch}")
-
-            data[ch] = {
-                "set_voltage_V": set_v,
-                "set_current_A": set_i,
-                "measured_voltage_V": meas_v,
-                "measured_current_A": meas_i,
-                "ramp_up_V_per_s": ramp_up,
-                "ramp_down_V_per_s": ramp_down,
+            required_oids = {
+                "set_voltage_V": f"outputVoltage.{ch}",
+                "set_current_A": f"outputCurrent.{ch}",
+                "measured_voltage_V": f"outputMeasurementSenseVoltage.{ch}",
+                "measured_current_A": f"outputMeasurementCurrent.{ch}",
+                "ramp_up_V_per_s": f"outputVoltageRiseRate.{ch}",
             }
+            missing = [oid for oid in required_oids.values() if oid not in snapshot]
+            if missing:
+                raise RuntimeError(
+                    f"{ch}: missing required records from snmpwalk: {', '.join(missing)}"
+                )
+
+            values = {
+                key: self.display_value(snapshot[oid])
+                for key, oid in required_oids.items()
+            }
+            set_v = values["set_voltage_V"]
+            set_i = values["set_current_A"]
+            meas_v = values["measured_voltage_V"]
+            meas_i = values["measured_current_A"]
+            ramp_up = values["ramp_up_V_per_s"]
+
+            data[ch] = values
 
             print(
                 f"{ch}: "
@@ -294,8 +300,7 @@ class IsegMPOD:
                 f"Ilim={set_i} A, "
                 f"Vmeas={meas_v} V, "
                 f"Imeas={meas_i} A, "
-                f"RampUp={ramp_up} V/s, "
-                f"RampDown={ramp_down} V/s"
+                f"RampUp={ramp_up} V/s"
             )
 
         return data
@@ -310,14 +315,11 @@ class IsegMPOD:
         voltage_setpoint_v: float = 50.0,
         current_limit_a: float = 0.001,
         ramp_rate_v_per_s: float = 100.0,
-        also_set_fall_rate: bool = True,
     ) -> Dict[str, Dict[str, str]]:
         print("\n=== Configuring HV settings and turning channels ON ===")
         print(f"Target voltage setting: {voltage_setpoint_v} V")
         print(f"Target current limit:   {current_limit_a} A")
         print(f"Target ramp rate:       {ramp_rate_v_per_s} V/s")
-        data = {}
-
         for ch in channels:
             print(f"\nConfiguring {ch}...")
 
@@ -329,19 +331,20 @@ class IsegMPOD:
             self.snmpset_float(f"outputCurrent.{ch}", current_limit_a)
             self.snmpset_float(f"outputVoltageRiseRate.{ch}", ramp_rate_v_per_s)
 
-            if also_set_fall_rate:
-                self.snmpset_float(f"outputVoltageFallRate.{ch}", ramp_rate_v_per_s)
+        # Section 4.4 documents reading all values with snmpwalk. Parse one
+        # snapshot after all writes instead of issuing individual get commands.
+        configured_snapshot = self.read_all()
+        configured_data = self.read_channel_settings(channels, configured_snapshot)
 
-            # Read back before enabling output
-            set_v = float(self.snmpget(f"outputVoltage.{ch}"))
-            set_i = float(self.snmpget(f"outputCurrent.{ch}"))
-            ramp_up = float(self.snmpget(f"outputVoltageRiseRate.{ch}"))
-            ramp_down = float(self.snmpget(f"outputVoltageFallRate.{ch}"))
+        for ch in channels:
+            set_v = float(configured_data[ch]["set_voltage_V"])
+            set_i = float(configured_data[ch]["set_current_A"])
+            ramp_up = float(configured_data[ch]["ramp_up_V_per_s"])
 
+            print(f"\nVerifying {ch}...")
             print(f"  Readback Vset:      {set_v} V")
             print(f"  Readback Ilimit:    {set_i} A")
             print(f"  Readback ramp up:   {ramp_up} V/s")
-            print(f"  Readback ramp down: {ramp_down} V/s")
 
             # Basic sanity checks before HV ON
             if abs(set_v - voltage_setpoint_v) > 1.0:
@@ -353,24 +356,16 @@ class IsegMPOD:
             if abs(ramp_up - ramp_rate_v_per_s) > 5.0:
                 raise RuntimeError(f"{ch}: Ramp-rate readback mismatch. Refusing to turn ON.")
 
-            # Turn HV output ON
             print(f"  Turning {ch} ON...")
             self.snmpset_int(f"outputSwitch.{ch}", 1)
 
-            # Verify ON / ramping / status
-            status = self.snmpget(f"outputStatus.{ch}", quiet=False)
-            meas_v = self.snmpget(f"outputMeasurementTerminalVoltage.{ch}")
-            meas_i = self.snmpget(f"outputMeasurementCurrent.{ch}")
+        enabled_snapshot = self.read_all()
+        data = self.read_channel_settings(channels, enabled_snapshot)
 
-            data[ch] = {
-                "set_voltage_V": set_v,
-                "set_current_A": set_i,
-                "measured_voltage_V": meas_v,
-                "measured_current_A": meas_i,
-                "ramp_up_V_per_s": ramp_up,
-                "ramp_down_V_per_s": ramp_down,
-            }
-
+        for ch in channels:
+            status = enabled_snapshot.get(f"outputStatus.{ch}", "MISSING")
+            meas_v = data[ch]["measured_voltage_V"]
+            meas_i = data[ch]["measured_current_A"]
             print(f"  Status:             {status}")
             print(f"  Measured voltage:   {meas_v} V")
             print(f"  Measured current:   {meas_i} A")
@@ -444,7 +439,6 @@ def main():
 
     cfg = SNMPConfig(
         ip=ip,
-        mib_path="/usr/share/snmp/mibs",
         read_community="public",
         write_community="guru",
     )
@@ -454,19 +448,23 @@ def main():
     if not test_title:
         test_title = "Untitled ISEG PMOD QC Test"
 
+    channels: List[str] = []
+
     try:
+        initial_snapshot = mpod.read_all()
+
         # a. Crate presence and firmware
-        crate_info = mpod.check_crate()
+        crate_info = mpod.check_crate(initial_snapshot)
 
         # b. HV module presence, serial number, firmware
-        modules = mpod.discover_modules()
+        modules = mpod.discover_modules(initial_snapshot)
 
         # Discover channels from actual crate
-        channels = mpod.discover_channels()
+        channels = mpod.discover_channels(initial_snapshot)
 
         # c. Communication errors / alarms
-        module_ok = mpod.check_module_health()
-        channel_ok = mpod.check_channel_health(channels)
+        module_ok = mpod.check_module_health(initial_snapshot)
+        channel_ok = mpod.check_channel_health(channels, initial_snapshot)
 
         if not module_ok or not channel_ok:
             print("\nAborting configuration because alarms/errors were detected.")
@@ -474,7 +472,7 @@ def main():
             sys.exit(2)
 
         # d. Initial readback
-        initial_data = mpod.read_channel_settings(channels)
+        initial_data = mpod.read_channel_settings(channels, initial_snapshot)
         append_channel_data_to_csv(test_title, "Initial readback", channels, initial_data)
 
         # e. Set voltage/current/ramp limits
@@ -483,12 +481,12 @@ def main():
             voltage_setpoint_v=50.0,
             current_limit_a=0.001,
             ramp_rate_v_per_s=100.0,
-            also_set_fall_rate=True,
         )
         append_channel_data_to_csv(test_title, "Configured and turned on", channels, configured_data)
 
         # Final readback
-        final_data = mpod.read_channel_settings(channels)
+        final_snapshot = mpod.read_all()
+        final_data = mpod.read_channel_settings(channels, final_snapshot)
         append_channel_data_to_csv(test_title, "Final readback", channels, final_data)
 
         print("\nDONE: MPOD/iség HV module configuration completed successfully.")
@@ -496,7 +494,8 @@ def main():
     except KeyboardInterrupt:
         print("\nKeyboardInterrupt detected. Turning off all discovered channels if possible.")
         try:
-            channels = mpod.discover_channels()
+            if not channels:
+                channels = mpod.discover_channels(mpod.read_all())
             mpod.turn_off_all(channels, emergency=False)
         except Exception as e:
             print(f"Could not safely turn off channels after interrupt: {e}")
