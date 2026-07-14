@@ -8,7 +8,7 @@ import csv
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Set
 
 
 RESULTS_DIR = Path.cwd() / "iseg_qc_results"
@@ -166,37 +166,46 @@ class IsegMPOD:
         return crate_info
 
     # ------------------------------------------------------------
-    # b. Confirm module presence from records that exist in the crate walk
+    # b. Confirm iseg module presence from moduleDescription records
     # ------------------------------------------------------------
 
-    def discover_modules(self, snapshot: Dict[str, str]) -> Dict[str, str]:
-        print("\n=== Discovering modules ===")
-        modules = {}
+    def discover_iseg_modules(self, snapshot: Dict[str, str]) -> Dict[str, str]:
+        print("\n=== Discovering iseg modules ===")
+        modules: Dict[str, str] = {}
 
         for oid, encoded_value in snapshot.items():
-            if oid.startswith("moduleDescription."):
-                desc = self.display_value(encoded_value)
-                modules[oid] = desc
+            match = re.fullmatch(r"moduleDescription\.(ma\d+)", oid)
+            if not match:
+                continue
+
+            module_id = match.group(1)
+            desc = self.display_value(encoded_value)
+            if "iseg" in desc.lower():
+                modules[module_id] = desc
                 print(f"{oid}: {desc}")
+            else:
+                print(f"Skipping {oid}: {desc}")
 
         if not modules:
-            for oid, encoded_value in snapshot.items():
-                if oid.startswith("moduleIndex."):
-                    value = self.display_value(encoded_value)
-                    modules[oid] = value
-                    print(f"{oid}: {value}")
-
-        if not modules:
-            print("No moduleDescription/moduleIndex entries found in this crate walk.")
-            return {}
+            raise RuntimeError("No iseg moduleDescription entries found in this crate walk.")
 
         return modules
+
+    @staticmethod
+    def channel_module_id(channel: str) -> str:
+        channel_number = int(channel[1:])
+        module_number = channel_number // 100
+        return f"ma{module_number}"
 
     # ------------------------------------------------------------
     # Discover all HV channel indices
     # ------------------------------------------------------------
 
-    def discover_channels(self, snapshot: Dict[str, str]) -> List[str]:
+    def discover_channels(
+        self,
+        snapshot: Dict[str, str],
+        allowed_module_ids: Set[str],
+    ) -> List[str]:
         print("\n=== Discovering output channels ===")
         channels = []
 
@@ -213,15 +222,23 @@ class IsegMPOD:
 
         if not channels:
             raise RuntimeError("No output channels found from outputIndex/outputName records.")
+                # skip channels U200-207 for now, seems sussy
         
-        # skip channels U200-207 for now, seems sussy
         channels = [
             channel for channel in channels
             if not 200 <= int(channel[1:]) <= 207
         ]
+        channels = [
+            channel for channel in channels
+            if self.channel_module_id(channel) in allowed_module_ids
+        ]
+
+        if not channels:
+            raise RuntimeError("No output channels found for discovered iseg modules.")
+
 
         channels.sort(key=lambda channel: int(channel[1:]))
-        print(f"Found {len(channels)} output channels:")
+        print(f"Found {len(channels)} iseg output channels:")
         print(", ".join(channels))
 
         return channels
@@ -230,7 +247,11 @@ class IsegMPOD:
     # c. Confirm no communication errors or hardware alarms
     # ------------------------------------------------------------
 
-    def check_module_health(self, snapshot: Dict[str, str]) -> bool:
+    def check_module_health(
+        self,
+        snapshot: Dict[str, str],
+        allowed_module_ids: Set[str],
+    ) -> bool:
         print("\n=== Checking module health ===")
         status_entries = {
             oid: value
@@ -240,6 +261,7 @@ class IsegMPOD:
                 "moduleEventStatus.",
                 "moduleEventChannelStatus.",
             ))
+            and oid.rsplit(".", 1)[-1] in allowed_module_ids
         }
 
         for oid, value in status_entries.items():
@@ -508,14 +530,15 @@ def main():
         # a. Crate presence and crate-tree info
         crate_info = mpod.check_crate(initial_snapshot)
 
-        # b. Module presence from moduleDescription/moduleIndex records
-        modules = mpod.discover_modules(initial_snapshot)
+        # b. Only consider iseg modules from moduleDescription records
+        modules = mpod.discover_iseg_modules(initial_snapshot)
+        module_ids = set(modules)
 
         # Discover channels from actual crate
-        channels = mpod.discover_channels(initial_snapshot)
+        channels = mpod.discover_channels(initial_snapshot, module_ids)
 
         # c. Communication errors / alarms
-        module_ok = mpod.check_module_health(initial_snapshot)
+        module_ok = mpod.check_module_health(initial_snapshot, module_ids)
         channel_ok = mpod.check_channel_health(channels, initial_snapshot)
 
         if not module_ok or not channel_ok:
@@ -547,7 +570,9 @@ def main():
         print("\nKeyboardInterrupt detected. Turning off all discovered channels if possible.")
         try:
             if not channels:
-                channels = mpod.discover_channels(mpod.read_all())
+                shutdown_snapshot = mpod.read_all()
+                shutdown_modules = mpod.discover_iseg_modules(shutdown_snapshot)
+                channels = mpod.discover_channels(shutdown_snapshot, set(shutdown_modules))
             mpod.turn_off_all(channels, emergency=False)
         except Exception as e:
             print(f"Could not safely turn off channels after interrupt: {e}")
