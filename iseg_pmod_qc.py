@@ -60,19 +60,24 @@ class IsegMPOD:
 
     def _command_args(self, command: str, community: str) -> List[str]:
         # Command form documented in MPOD HV manual section 4.4.
-        return [
+        args = [
             command,
             "-v", self.cfg.version,
             "-m", self.cfg.mib_name,
             "-c", community,
             self.cfg.ip,
         ]
+        if command == "snmpwalk":
+            args.append("crate")
+        return args
 
     @staticmethod
     def parse_walk_output(raw: str) -> Dict[str, str]:
         """Parse section 4.4's '<MIB>::<OID> = <TYPE>: <value>' output."""
         entries: Dict[str, str] = {}
         for line in raw.splitlines():
+            if "No more variables left in this MIB View" in line:
+                continue
             match = re.match(r"^\S+::([^\s=]+)\s*=\s*(.+)$", line.strip())
             if match:
                 entries[match.group(1)] = match.group(2).strip()
@@ -83,15 +88,26 @@ class IsegMPOD:
         value = encoded_value.strip()
 
         float_match = re.search(
-            r"(?:Opaque:\s*)?Float:\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?)",
+            r"(?:Opaque:\s*)?Float:\s*([-+]?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?|nan))",
             value,
             re.IGNORECASE,
         )
         if float_match:
             return float_match.group(1)
 
+        integer_match = re.search(r"INTEGER:\s*([^\s]+)", value, re.IGNORECASE)
+        if integer_match:
+            return integer_match.group(1)
+
+        ip_match = re.search(r"IpAddress:\s*(\S+)", value, re.IGNORECASE)
+        if ip_match:
+            return ip_match.group(1)
+
         if value.upper().startswith("STRING:"):
             return value.split(":", 1)[1].strip().strip('"')
+
+        if value.startswith('"') and value.endswith('"'):
+            return value.strip('"')
 
         return value
 
@@ -117,28 +133,40 @@ class IsegMPOD:
         )
 
     # ------------------------------------------------------------
-    # a. Confirm MPOD crate presence and firmware info
+    # a. Confirm MPOD crate presence and crate-tree info
     # ------------------------------------------------------------
 
     def check_crate(self, snapshot: Dict[str, str]) -> Dict[str, str]:
         print("\n=== Checking MPOD crate ===")
 
-        sys_descr_raw = snapshot.get("sysDescr.0")
-        if not sys_descr_raw:
-            raise RuntimeError("sysDescr.0 was not present in the full snmpwalk output.")
-        sys_descr = self.display_value(sys_descr_raw)
+        required_oids = ["sysMainSwitch.0", "sysStatus.0", "outputNumber.0"]
+        missing = [oid for oid in required_oids if oid not in snapshot]
+        if missing:
+            raise RuntimeError(
+                "The crate snmpwalk did not include required crate records: "
+                + ", ".join(missing)
+            )
 
-        print("sysDescr:")
-        print(sys_descr)
-        print(f"\nParsed {len(snapshot)} records from the crate SNMP walk.")
-
-        return {
-            "sysDescr": sys_descr,
-            "crate_tree_present": "True",
+        crate_info = {
+            "sysMainSwitch": self.display_value(snapshot["sysMainSwitch.0"]),
+            "sysStatus": snapshot["sysStatus.0"],
+            "outputNumber": self.display_value(snapshot["outputNumber.0"]),
+            "moduleNumber": self.display_value(snapshot.get("moduleNumber.0", "")),
+            "psSerialNumber": self.display_value(snapshot.get("psSerialNumber.0", "")),
+            "ipDynamicAddress": self.display_value(snapshot.get("ipDynamicAddress.0", "")),
+            "ipStaticAddress": self.display_value(snapshot.get("ipStaticAddress.0", "")),
+            "macAddress": self.display_value(snapshot.get("macAddress.0", "")),
         }
 
+        for label, value in crate_info.items():
+            if value:
+                print(f"{label}: {value}")
+        print(f"\nParsed {len(snapshot)} records from the crate SNMP walk.")
+
+        return crate_info
+
     # ------------------------------------------------------------
-    # b. Confirm HV module presence: serial number, firmware number
+    # b. Confirm module presence from records that exist in the crate walk
     # ------------------------------------------------------------
 
     def discover_modules(self, snapshot: Dict[str, str]) -> Dict[str, str]:
@@ -152,7 +180,15 @@ class IsegMPOD:
                 print(f"{oid}: {desc}")
 
         if not modules:
-            raise RuntimeError("No moduleDescription entries found. HV module may not be detected.")
+            for oid, encoded_value in snapshot.items():
+                if oid.startswith("moduleIndex."):
+                    value = self.display_value(encoded_value)
+                    modules[oid] = value
+                    print(f"{oid}: {value}")
+
+        if not modules:
+            print("No moduleDescription/moduleIndex entries found in this crate walk.")
+            return {}
 
         return modules
 
@@ -165,12 +201,18 @@ class IsegMPOD:
         channels = []
 
         for oid in snapshot:
-            match = re.fullmatch(r"outputName\.(u\d+)", oid)
+            match = re.fullmatch(r"outputIndex\.(u\d+)", oid)
             if match:
                 channels.append(match.group(1))
 
         if not channels:
-            raise RuntimeError("No output channels found from outputName walk.")
+            for oid in snapshot:
+                match = re.fullmatch(r"outputName\.(u\d+)", oid)
+                if match:
+                    channels.append(match.group(1))
+
+        if not channels:
+            raise RuntimeError("No output channels found from outputIndex/outputName records.")
 
         channels.sort(key=lambda channel: int(channel[1:]))
         print(f"Found {len(channels)} output channels:")
@@ -196,6 +238,10 @@ class IsegMPOD:
 
         for oid, value in status_entries.items():
             print(f"{oid}: {value}")
+
+        if not status_entries:
+            print("No moduleStatus/moduleEventStatus records were present in this crate walk.")
+            return True
 
         bad_keywords = [
             "moduleNeedService",
@@ -453,10 +499,10 @@ def main():
     try:
         initial_snapshot = mpod.read_all()
 
-        # a. Crate presence and firmware
+        # a. Crate presence and crate-tree info
         crate_info = mpod.check_crate(initial_snapshot)
 
-        # b. HV module presence, serial number, firmware
+        # b. Module presence from moduleDescription/moduleIndex records
         modules = mpod.discover_modules(initial_snapshot)
 
         # Discover channels from actual crate
