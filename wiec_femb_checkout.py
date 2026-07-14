@@ -13,14 +13,10 @@ from colorama import init, Fore, Style
 import json
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-QC_PACKAGE_DIR = os.path.join(BASE_DIR, 'BNL_CE_WIB_SW_QC')
-if QC_PACKAGE_DIR not in sys.path:
-    sys.path.insert(0, QC_PACKAGE_DIR)
+QC_PACKAGE_DIR = BASE_DIR
 
-# from BNL_CE_WIB_SW_QC import cts_ssh_FEMB as cts
-
-from BNL_CE_WIB_SW_QC.qc_utils import QC_Process
-from BNL_CE_WIB_SW_QC.qc_results import analyze_test_results, display_qc_results
+from qc_utils import QC_Process
+from qc_results import analyze_test_results, display_qc_results
 
 
 

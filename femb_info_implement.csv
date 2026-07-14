@@ -1,0 +1,21 @@
+﻿tester,lke
+SLOT0,BNL_FEMB_IO-1865-1J_00094
+SLOT1,BNL_FEMB_I0-1865-1K_00016
+SLOT2,
+SLOT3,
+test_site,BNL
+toy_TPC,y
+comment,QC test
+top_path,/home/dune/
+Tech_site_email,lke@bnl.gov
+Test_Site,BNL
+Tech_Coordinator,LKE
+QC_data_root_folder,/mnt/data
+Rigol_PS_for_WIB,True
+Rigol_PS_ID,USB0::0x1AB1::0x0E11::DP8C184550857::INSTR
+CTS_LN2_AM,1800
+CTS_LN2_PM,1200
+PS_Control_Mode,USB
+CTS_LN2_Fill_Wait,1800
+CTS_Warmup_Wait,3600
+Network_Upload_Path,/data/rtss/femb
