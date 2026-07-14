@@ -1,15 +1,31 @@
 import csv
 
-import pyvisa
 import time
-import usb.core
-import usb.util
 
 import os
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 technician_csv = os.path.join(ROOT_DIR, "../init_setup.csv")
 print(technician_csv)
+
+
+def _load_pyvisa():
+    try:
+        import pyvisa
+        return pyvisa
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "USB power-supply mode requires the 'pyvisa' Python package. "
+            "Install it on this machine, or set PS_Control_Mode,MANUAL in init_setup.csv."
+        ) from exc
+
+
+def _load_usb_core():
+    try:
+        import usb.core
+        return usb.core
+    except ModuleNotFoundError:
+        return None
 
 
 class RigolDP800:
@@ -23,6 +39,7 @@ class RigolDP800:
                 csv_data[key.strip()] = value.strip()
 
     def __init__(self, resource=csv_data['Rigol_PS_ID'], timeout=5000):
+        pyvisa = _load_pyvisa()
         self.rm = pyvisa.ResourceManager()
 
         self._release_usb_device()
@@ -39,12 +56,17 @@ class RigolDP800:
             raise
 
     def _release_usb_device(self):
+        usb_core = _load_usb_core()
+        if usb_core is None:
+            print("[WARN] pyusb is not installed; skipping USB kernel-driver release")
+            return
+
         try:
-            # Rigol DP800的USB VID:PID
+            # Rigol DP800 USB VID:PID
             RIGOL_VID = 0x1AB1
             RIGOL_PID = 0x0E11
 
-            dev = usb.core.find(idVendor=RIGOL_VID, idProduct=RIGOL_PID)
+            dev = usb_core.find(idVendor=RIGOL_VID, idProduct=RIGOL_PID)
 
             if dev is None:
                 print("⚠️ Rigol device not found via USB")
@@ -56,14 +78,14 @@ class RigolDP800:
                         try:
                             dev.detach_kernel_driver(intf.bInterfaceNumber)
                             print(f"🔓 Detached kernel driver from interface {intf.bInterfaceNumber}")
-                        except usb.core.USBError as e:
+                        except usb_core.USBError as e:
                             print(f"⚠️ Could not detach kernel driver: {e}")
 
             try:
                 dev.reset()
                 time.sleep(1)
                 print("🔄 USB device reset")
-            except usb.core.USBError as e:
+            except usb_core.USBError as e:
                 print(f"⚠️ Could not reset device: {e}")
 
         except Exception as e:
