@@ -12,6 +12,11 @@ from datetime import datetime
 from colorama import init, Fore, Style
 import json
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+QC_PACKAGE_DIR = os.path.join(BASE_DIR, 'BNL_CE_WIB_SW_QC')
+if QC_PACKAGE_DIR not in sys.path:
+    sys.path.insert(0, QC_PACKAGE_DIR)
+
 from BNL_CE_WIB_SW_QC import cts_ssh_FEMB as cts
 
 from BNL_CE_WIB_SW_QC.GUI import send_email
@@ -24,7 +29,7 @@ from BNL_CE_WIB_SW_QC.qc_results import analyze_test_results, display_qc_results
 
 
 # Image paths for instruction popups
-IMG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'GUI', 'output_pngs')
+IMG_DIR = os.path.join(QC_PACKAGE_DIR, 'GUI', 'output_pngs')
 
 init()
 
@@ -32,9 +37,9 @@ init()
 SENDER_EMAIL = "bnlr216@gmail.com"
 SENDER_PASSWORD = "vvef tosp minf wwhf"
 
-CSV_FILE = './femb_info.csv'
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-INIT_SETUP_CSV = os.path.join(BASE_DIR, 'init_setup.csv')
+CSV_FILE = os.path.join(QC_PACKAGE_DIR, 'femb_info.csv')
+INIT_SETUP_CSV = os.path.join(QC_PACKAGE_DIR, 'init_setup.csv')
+RESULTS_FILE = os.path.join(BASE_DIR, 'results.json')
 
 
 
@@ -127,6 +132,11 @@ def scan_femb_qr_codes():
 
 def save_config(tester_name, tester_email, femb_ids, init_config):
     """Save configuration to CSV file with all fields matching femb_info_implement.csv"""
+    if isinstance(femb_ids, list):
+        femb_ids = {f"SLOT{idx}": femb_id for idx, femb_id in enumerate(femb_ids[:4])}
+    elif not isinstance(femb_ids, dict):
+        femb_ids = {}
+
     csv_data = {
         # User input
         'tester': tester_name,
@@ -449,12 +459,12 @@ def main():
 
     # Save configuration with all fields matching femb_info_implement.csv
     info = None
-    with open('results.json', "r") as jsonfile:
+    with open(RESULTS_FILE, "r") as jsonfile:
         info = json.load(jsonfile)  
 
     tester_name = info.get("tester_name", "Unknown")
     tester_email = info.get("tester_email", "Unknown")
-    femb_ids = info.get("femb_ids", ["0", "1", "2", "3"])
+    femb_ids = info.get("femb_ids", {})
     save_config(tester_name, tester_email, femb_ids, init_config)
     inform = cts.read_csv_to_dict(CSV_FILE, 'RT')
 
