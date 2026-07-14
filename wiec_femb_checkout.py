@@ -19,10 +19,6 @@ if QC_PACKAGE_DIR not in sys.path:
 
 from BNL_CE_WIB_SW_QC import cts_ssh_FEMB as cts
 
-from BNL_CE_WIB_SW_QC.GUI import send_email
-from BNL_CE_WIB_SW_QC.GUI import Rigol_DP800 as rigol
-from BNL_CE_WIB_SW_QC.GUI import pop_window as pop
-
 from BNL_CE_WIB_SW_QC.qc_utils import QC_Process
 from BNL_CE_WIB_SW_QC.qc_results import analyze_test_results, display_qc_results
 
@@ -79,57 +75,6 @@ def print_status(status_type, message):
     print(color + f"{icon} {message}" + Style.RESET_ALL)
 
 
-def scan_femb_qr_codes():
-    """
-    Scan QR codes for all 4 FEMB slots.
-    Returns a dictionary with slot assignments.
-    """
-    print_header("FEMB QR Code Scanning")
-    print(Fore.YELLOW + "Scan the QR code for each FEMB board in the popup window." + Style.RESET_ALL)
-    print(Fore.YELLOW + "Click 'Skip' or press Enter with empty field to skip empty slots.\n" + Style.RESET_ALL)
-
-    femb_ids = {}
-    # slot_key, display_name, image_file
-    slot_names = [
-        ("SLOT0", "Slot #1", "4.png"),
-        ("SLOT1", "Slot #2", "5.png"),
-        ("SLOT2", "Slot #3", "6.png"),
-        ("SLOT3", "Slot #4", "7.png")
-    ]
-
-    for slot_key, slot_desc, img_file in slot_names:
-        # Show installation instruction popup with QR input field
-        slot_num = int(slot_key[-1]) + 1
-        femb_id = pop.show_input_popup(
-            title=f"Page {slot_num + 3}: Install FEMB into {slot_desc}",
-            image_path=os.path.join(IMG_DIR, img_file),
-            prompt=f"Scan FEMB QR Code for {slot_desc}:",
-            require_confirmation=True
-        )
-
-        femb_ids[slot_key] = femb_id
-        if femb_id:
-            print_status('success', f"{slot_desc}: {femb_id}")
-        else:
-            print_status('info', f"{slot_desc}: Empty (skipped)")
-
-    # Summary
-    print("\n" + Fore.CYAN + "-" * 50 + Style.RESET_ALL)
-    print(Fore.GREEN + "FEMB Assignment Summary:" + Style.RESET_ALL)
-    installed_count = 0
-    for slot_key, slot_desc, _ in slot_names:
-        femb_id = femb_ids.get(slot_key, "")
-        if femb_id:
-            print(f"  {slot_desc}: {Fore.GREEN}{femb_id}{Style.RESET_ALL}")
-            installed_count += 1
-        else:
-            print(f"  {slot_desc}: {Fore.YELLOW}Empty{Style.RESET_ALL}")
-
-    print(f"\nTotal FEMBs installed: {Fore.GREEN}{installed_count}{Style.RESET_ALL}")
-
-    return femb_ids
-
-
 def save_config(tester_name, tester_email, femb_ids, init_config):
     """Save configuration to CSV file with all fields matching femb_info_implement.csv"""
     if isinstance(femb_ids, list):
@@ -176,19 +121,12 @@ def save_config(tester_name, tester_email, femb_ids, init_config):
     return csv_data
 
 
-def run_checkout_test(inform, psu):
+def run_checkout_test(inform):
     """
     Run the checkout test for all installed FEMBs.
     Returns paths to data and report directories.
     """
     print_header("Running Checkout Test")
-
-    # Step 1: Power ON WIB via USB-controlled power supply
-    print_step(1, 4, "Power On Warm Interface Board")
-    print_status('info', "Powering ON WIB via USB power supply...")
-    psu.set_channel(1, 12.0, 3.0, on=True)
-    psu.set_channel(2, 12.0, 3.0, on=True)
-    print_status('success', "WIB power ON (CH1: 12V/3A, CH2: 12V/3A)")
 
     # Step 2: Wait for fiber converter
     print_step(2, 4, "Waiting for Fiber Converter")
@@ -281,110 +219,43 @@ def generate_result_summary(inform, data_path, report_path):
     return all_passed, summary_text, slot_results
 
 
-def process_board_removal(inform, slot_results):
-    """
-    Guide tester through removing each board slot by slot.
-    Requires QR scan confirmation before removal.
-    Uses popup window with image, result display, and QR scan field.
-    """
-    print_header("Board Removal Process")
-    print(Fore.YELLOW + "Remove boards one by one. Scan QR code to confirm each board." + Style.RESET_ALL)
-    print(Fore.YELLOW + "PASS -> GOOD tray | FAIL -> BAD tray\n" + Style.RESET_ALL)
+# def send_result_email(tester_email, all_passed, summary_text, inform):
+#     """Send email notification with test results to tester and tech receiver"""
+#     print_header("Sending Email Notification")
+#     # Build recipient list
+#     recipients = []
+#     if tester_email and '@' in tester_email:
+#         recipients.append(tester_email)
+#     tech_receiver = inform.get('Tech_receiver', 'lke@bnl.gov')
+#     if tech_receiver and '@' in tech_receiver and tech_receiver not in recipients:
+#         recipients.append(tech_receiver)
+#     if not recipients:
+#         print_status('warning', "No valid email recipients. Skipping email notification.")
+#         return False
+#     status_str = "PASS" if all_passed else "FAIL"
+#     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+#     test_site = inform.get('test_site', 'BNL')
+#     subject = f"[CTS Checkout {status_str}] {test_site} - {timestamp}"
+#     body = f"""CTS FEMB Checkout Test Completed
+# {summary_text}
 
-    # slot_num, display_name, image_file
-    slot_names = [
-        ("0", "Slot #1", "10.png"),
-        ("1", "Slot #2", "11.png"),
-        ("2", "Slot #3", "12.png"),
-        ("3", "Slot #4", "13.png")
-    ]
+# ---
+# This is an automated message from the FEMB Post-Assembly Checkout System.
+# """
 
-    for slot_num, slot_desc, img_file in slot_names:
-        slot_key = f'SLOT{slot_num}'
-        expected_id = inform.get(slot_key, '')
-
-        # Skip empty slots
-        if not expected_id or expected_id in ['', ' ', 'N/A', 'EMPTY', 'NONE']:
-            print(Fore.CYAN + f"\n[{slot_desc}] " + Fore.YELLOW + "Empty - Skip" + Style.RESET_ALL)
-            continue
-
-        # Get test result for this slot
-        status, _ = slot_results.get(slot_num, ('no_data', ''))
-
-        # Determine tray info for logging
-        if status == 'pass':
-            tray_name = "GOOD"
-            tray_style = Fore.GREEN
-        elif status == 'fail':
-            tray_name = "BAD"
-            tray_style = Fore.RED
-        else:
-            tray_name = "REVIEW"
-            tray_style = Fore.YELLOW
-
-        # Show combined removal popup with image, result, and QR scan
-        display_slot = int(slot_num) + 1
-        confirmed = pop.show_removal_popup(
-            title=f"Page {display_slot + 9}: Remove Board from {slot_desc}",
-            image_path=os.path.join(IMG_DIR, img_file),
-            expected_id=expected_id,
-            test_status=status
-        )
-
-        # Log result to terminal
-        print("\n" + Fore.CYAN + "=" * 60 + Style.RESET_ALL)
-        print(Fore.CYAN + f"  {slot_desc}" + Style.RESET_ALL)
-        print(Fore.CYAN + "=" * 60 + Style.RESET_ALL)
-        print(f"  FEMB ID: {Fore.WHITE}{expected_id}{Style.RESET_ALL}")
-        print(f"  Test Result: {tray_style}{status.upper()}{Style.RESET_ALL}")
-
-        if confirmed:
-            print_status('success', f"ID confirmed. FEMB removed and placed in {tray_name} tray.")
-        else:
-            print_status('warning', f"Removal cancelled for {slot_desc}.")
-
-    print("\n" + Fore.GREEN + "=" * 60)
-    print("  All boards processed!")
-    print("=" * 60 + Style.RESET_ALL)
-
-
-def send_result_email(tester_email, all_passed, summary_text, inform):
-    """Send email notification with test results to tester and tech receiver"""
-    print_header("Sending Email Notification")
-    # Build recipient list
-    recipients = []
-    if tester_email and '@' in tester_email:
-        recipients.append(tester_email)
-    tech_receiver = inform.get('Tech_receiver', 'lke@bnl.gov')
-    if tech_receiver and '@' in tech_receiver and tech_receiver not in recipients:
-        recipients.append(tech_receiver)
-    if not recipients:
-        print_status('warning', "No valid email recipients. Skipping email notification.")
-        return False
-    status_str = "PASS" if all_passed else "FAIL"
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    test_site = inform.get('test_site', 'BNL')
-    subject = f"[CTS Checkout {status_str}] {test_site} - {timestamp}"
-    body = f"""CTS FEMB Checkout Test Completed
-{summary_text}
-
----
-This is an automated message from the FEMB Post-Assembly Checkout System.
-"""
-
-    try:
-        send_email.send_email(
-            SENDER_EMAIL,
-            SENDER_PASSWORD,
-            recipients,
-            subject,
-            body
-        )
-        print_status('success', f"Email sent to: {', '.join(recipients)}")
-        return True
-    except Exception as email_err:
-        print_status('error', f"Failed to send email: {email_err}")
-        return False
+#     try:
+#         send_email.send_email(
+#             SENDER_EMAIL,
+#             SENDER_PASSWORD,
+#             recipients,
+#             subject,
+#             body
+#         )
+#         print_status('success', f"Email sent to: {', '.join(recipients)}")
+#         return True
+#     except Exception as email_err:
+#         print_status('error', f"Failed to send email: {email_err}")
+#         return False
 
 
 def main():
@@ -468,59 +339,30 @@ def main():
     save_config(tester_name, tester_email, femb_ids, init_config)
     inform = cts.read_csv_to_dict(CSV_FILE, 'RT')
 
-    # Initialize power supply controller
-    print_status('info', "Initializing power supply controller...")
-    psu = rigol.PowerSupplyController()
-    psu_closed = False 
-    try:
-        # Step 4: Run checkout test
-        print_step(4, 5, "Running Checkout Test")
-        data_path, report_path = run_checkout_test(inform, psu)
+    
+    # Step 4: Run checkout test
+    print_step(4, 5, "Running Checkout Test")
+    data_path, report_path = run_checkout_test(inform)
 
         # Step 5: Generate results 
-        print_step(5, 6, "Generating Results ")
-        all_passed, summary_text, slot_results = generate_result_summary(inform, data_path, report_path)
-        # send_result_email(tester_email, all_passed, summary_text, inform)
-        
-        #psu.close()
-        # # Show Page 9: Open cover for board removal
-        # pop.show_image_popup(
-        #     title="Page 9: Review Result and Open Cover",
-        #     image_path=os.path.join(IMG_DIR, "9.png")
-        # )
-
-        # # Step 6: Board removal with QR confirmation
-        # print_step(6, 6, "Board Removal")
-        # process_board_removal(inform, slot_results)
-
-        # # Show Page 14: Clean the test site
-        # pop.show_image_popup(
-        #     title="Page 14: Clean the Test Site",
-        #     image_path=os.path.join(IMG_DIR, "14.png")
-        # )
-
-        # Final summary display
-
-        print_header("Checkout Test Complete")
-        if all_passed:
-            print(Fore.GREEN + "  ✓✓✓ ALL TESTS PASSED ✓✓✓" + Style.RESET_ALL)
-        else:
-            print(Fore.RED + "  ✗✗✗ SOME TESTS FAILED ✗✗✗" + Style.RESET_ALL)
-            print(Fore.YELLOW + "\n  Please check the failed FEMBs and take appropriate action." + Style.RESET_ALL)
+    print_step(5, 6, "Generating Results ")
+    all_passed, summary_text, slot_results = generate_result_summary(inform, data_path, report_path)    
+    print("---------------------------------------------------------")
+    print("Summary Test")
+    print("-------------")
+    print(summary_text)
+    print("---------------------------------------------------------")
+    print("---------------------------------------------------------")
+    print_header("Checkout Test Complete")
+    if all_passed:
+        print(Fore.GREEN + "  ✓✓✓ ALL TESTS PASSED ✓✓✓" + Style.RESET_ALL)
+    else:
+        print(Fore.RED + "  ✗✗✗ SOME TESTS FAILED ✗✗✗" + Style.RESET_ALL)
+        print(Fore.YELLOW + "\n  Please check the failed FEMBs and take appropriate action." + Style.RESET_ALL)
         print_status('success', "Power supply turned OFF and connection closed.")
-        return True if all_passed else False
-
-    finally:
-        if not psu_closed:
-            print_status('info', "Turning OFF power supply...")
-            try:
-                psu.close()
-                psu_closed = True
-                print_status('success', "Power supply turned OFF and connection closed.")
-            except Exception as exc:
-                print_status('error', f"Power supply shutdown failed: {exc}")
-                # Always turn off power supply, even on exceptions
-
+    
+    return True if all_passed else False
+    
 
 if __name__ == "__main__":
     try:
