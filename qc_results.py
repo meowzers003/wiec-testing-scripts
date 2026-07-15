@@ -19,6 +19,7 @@ class QCResult:
         self.pass_files = []
         self.slot_status = {}  # {slot_num: (passed, femb_id)}
         self.slot_files = {}  # {slot_num: {'faults': [], 'passes': []}}
+        self.scanned_paths = []
         self.test_phase = ""
         self.total_faults = 0
         self.total_passes = 0
@@ -52,6 +53,7 @@ def analyze_test_results(paths, inform=None, time_limit_hours=None):
     for path in paths:
         if not os.path.isdir(path):
             continue
+        result.scanned_paths.append(path)
         for root, dirs, files in os.walk(path):
             for file in files:
                 file_path = os.path.join(root, file)
@@ -130,14 +132,17 @@ def analyze_test_results(paths, inform=None, time_limit_hours=None):
         slot_faults = result.slot_files[slot_num]['faults']
         slot_passes = result.slot_files[slot_num]['passes']
 
-        # Slot passes only if it has no fault files
-        passed = len(slot_faults) == 0
+        # Slot passes only if it has explicit pass evidence and no fault files.
+        # Treat missing data as a failure so aborted runs cannot become false PASS.
+        passed = len(slot_faults) == 0 and len(slot_passes) > 0
 
         # Debug: print slot file summary (if debug enabled)
         if os.environ.get('QC_DEBUG') == '1':
             print(f"DEBUG: Slot{slot_num} (FEMB {femb_id}):")
             print(f"  - Fault files: {len(slot_faults)}")
             print(f"  - Pass files: {len(slot_passes)}")
+            if not result.scanned_paths:
+                print("  - No result directories were scanned")
             if slot_faults:
                 for fault_file in slot_faults:
                     print(f"    • {os.path.basename(fault_file)}")
@@ -164,6 +169,8 @@ def display_qc_results(result, test_phase="QC Test", verbose=False):
     print(f"\n📊 Test Summary:")
     print(f"   Total Fault Files: {Fore.RED}{result.total_faults}{Style.RESET_ALL}")
     print(f"   Total Pass Files:  {Fore.GREEN}{result.total_passes}{Style.RESET_ALL}")
+    if not result.scanned_paths:
+        print(Fore.YELLOW + "   No result directories were available to scan." + Style.RESET_ALL)
 
     # Slot-by-slot results
     print(f"\n🔍 FEMB Status by Slot:")

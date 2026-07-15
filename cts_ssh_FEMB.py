@@ -18,7 +18,34 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WIB_IP = None
 
 
-def subrun(command, timeout=30, check=True, out=True, exitflg=True, user_input=None, rm=False, shell=False):
+def _text_from_timeout(value):
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="ignore")
+    return str(value)
+
+
+def _completed_from_timeout(command, timeout_error):
+    stdout = _text_from_timeout(getattr(timeout_error, "stdout", None))
+    stderr = _text_from_timeout(getattr(timeout_error, "stderr", None))
+    return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr=stderr)
+
+
+def _timeout_output_has_success(timeout_error, success_keywords, require_all=False):
+    if not success_keywords:
+        return False
+    output = (
+        _text_from_timeout(getattr(timeout_error, "stdout", None))
+        + _text_from_timeout(getattr(timeout_error, "stderr", None))
+    )
+    if require_all:
+        return all(keyword in output for keyword in success_keywords)
+    return any(keyword in output for keyword in success_keywords)
+
+
+def subrun(command, timeout=30, check=True, out=True, exitflg=True, user_input=None, rm=False, shell=False,
+           timeout_success_keywords=None, timeout_success_require_all=False):
     result = None
     # print("command = {}".format(command))
     if check:
@@ -45,6 +72,9 @@ def subrun(command, timeout=30, check=True, out=True, exitflg=True, user_input=N
 
         except subprocess.TimeoutExpired as T:
             print("No reponse in %d seconds" % (timeout))
+            if _timeout_output_has_success(T, timeout_success_keywords, timeout_success_require_all):
+                print("Timeout after success marker; continuing.")
+                return _completed_from_timeout(command, T)
             if exitflg:
                 # print (result.stdout)
                 print("Timeout FAIL!")
@@ -77,6 +107,9 @@ def subrun(command, timeout=30, check=True, out=True, exitflg=True, user_input=N
 
         except subprocess.TimeoutExpired as T:
             print("No reponse in %d seconds" % (timeout))
+            if _timeout_output_has_success(T, timeout_success_keywords, timeout_success_require_all):
+                print("Timeout after success marker; continuing.")
+                return _completed_from_timeout(command, T)
             return None
         return result
     else:
@@ -101,6 +134,9 @@ def subrun(command, timeout=30, check=True, out=True, exitflg=True, user_input=N
 
         except subprocess.TimeoutExpired as T:
             print("No reponse in %d seconds" % (timeout))
+            if _timeout_output_has_success(T, timeout_success_keywords, timeout_success_require_all):
+                print("Timeout after success marker; continuing.")
+                return _completed_from_timeout(command, T)
             return None
         return result
 
@@ -440,7 +476,12 @@ def cts_ssh_FEMB(wib_ip,root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
             "ssh", "root@" + WIB_IP,
             f"cd BNL_CE_WIB_SW_QC; python3 top_femb_powering.py {power_en}"
         ]
-        result = subrun(command, timeout=60, out=True)  # Display output
+        result = subrun(
+            command,
+            timeout=60,
+            out=True,
+            timeout_success_keywords=["Done"],
+        )  # Display output
 
         # Extract stdout for checking
         if hasattr(result, 'stdout'):
@@ -461,7 +502,15 @@ def cts_ssh_FEMB(wib_ip,root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
                 "ssh", "root@" + WIB_IP,
                 f"cd BNL_CE_WIB_SW_QC; python3 top_chkout_pls_fake_timing.py {slot_list} save 5"
             ]
-            result = subrun(command, timeout=60, out=True)  # Display output
+            success_markers = [f"FEMB{slot} is configurated" for slot in slot_list.split()]
+            success_markers.append("Cable Test Done")
+            result = subrun(
+                command,
+                timeout=60,
+                out=True,
+                timeout_success_keywords=success_markers,
+                timeout_success_require_all=True,
+            )  # Display output
 
             # Extract output
             output = ""
@@ -732,7 +781,19 @@ def cts_ssh_FEMB(wib_ip,root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
                 FEMB_list
             ])
 
-            result = subrun(command, timeout=Config.CHECKOUT_TIMEOUT, user_input=user_input, out=True)  # Display output
+            success_markers = [
+                f"Slot {slot} PASS\t ALL ASSEMBLY CHECKOUT"
+                for slot in Config.VALID_SLOTS
+                if slot in self.slot_list
+            ]
+            result = subrun(
+                command,
+                timeout=Config.CHECKOUT_TIMEOUT,
+                user_input=user_input,
+                out=True,
+                timeout_success_keywords=success_markers,
+                timeout_success_require_all=True,
+            )  # Display output
 
             if result is None:
                 return None
