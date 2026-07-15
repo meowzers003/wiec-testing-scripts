@@ -1,3 +1,10 @@
+# WIEC QC 
+
+run program below and follow user input prompts 
+
+`python3 wiec_qc.py `
+
+
 # DUNE-HV-Crate-Testing
 Automated production testing for DUNE HV Crate
 
