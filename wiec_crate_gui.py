@@ -28,10 +28,10 @@ from pathlib import Path
 try:
     from dune_hv_crate_test import LDOmeasure
 except ImportError as exc:
-    print("ERROR: Could not import LDOmeasure from dune_hv_crate_test.py.")
-    print("Make sure this wrapper script is in the same folder as dune_hv_crate_test.py.")
-    print(f"Import error: {exc}")
-    sys.exit(1)
+    LDOmeasure = None
+    LDO_IMPORT_ERROR = exc
+else:
+    LDO_IMPORT_ERROR = None
 
 
 def clean_name_field(text: str) -> str:
@@ -134,9 +134,59 @@ def confirm_before_run(config_file: str, test_name: str) -> bool:
 
 
 active_test = None
+wibs = {}
+VALID_WIB_POWER_STATES = {"on", "off"}
+
+
+def normalize_wib_number(wib_number):
+    wib_number = str(wib_number).strip()
+    if not wib_number.isdigit():
+        raise ValueError(f"WIB number must be an integer 0-5, got {wib_number!r}")
+
+    wib_int = int(wib_number)
+    if not 0 <= wib_int <= 5:
+        raise ValueError(f"WIB number must be between 0 and 5, got {wib_int}")
+
+    return str(wib_int)
+
+
+def normalize_wib_power_state(state):
+    state = str(state).strip().lower()
+    if state not in VALID_WIB_POWER_STATES:
+        raise ValueError(f"Power state must be ON or OFF, got {state!r}")
+    return state
+
+
+def prompt_wib_power_states():
+    global wibs
+
+    selected_wibs = {}
+
+    while True:
+        try:
+            wib_number = normalize_wib_number(input("Enter the WIB number you want to power on/off: "))
+            state = normalize_wib_power_state(input(f"Enter the power state (on/off) for WIB {wib_number}: "))
+        except ValueError as exc:
+            print(f"ERROR: {exc}")
+            continue
+
+        selected_wibs[wib_number] = state
+
+        more = input("Do you want to power on/off more WIBs? (y/n): ").strip().lower()
+        if more not in ("y", "yes"):
+            break
+
+    wibs = selected_wibs
+    return wibs
 
 def run_dune_hv_crate_test(config_file: str, test_name: str):
     global active_test
+
+    if LDOmeasure is None:
+        print("ERROR: Could not import LDOmeasure from dune_hv_crate_test.py.")
+        print("Make sure this wrapper script is in the same folder as dune_hv_crate_test.py.")
+        print(f"Import error: {LDO_IMPORT_ERROR}")
+        return False
 
     print("\nStarting DUNE HV crate test...")
     print("Do not close this terminal while the test is running.\n")
@@ -168,6 +218,8 @@ def main():
     print("\n" + "=" * 70)
     print("DUNE HV CRATE TEST TERMINAL GUI")
     print("=" * 70)
+
+    prompt_wib_power_states()
 
     version_number = prompt_required("Enter version number: ")
     tester_name = prompt_required("Enter name of tester: ")

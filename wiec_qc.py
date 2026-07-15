@@ -88,12 +88,12 @@ def shutdown_all():
 
 def main():
     test_sequence = [
-        #{
-        #   "name": "dune_hv_crate_test.py",
-        #   "key": "dune_hv_crate_test",
-        #    "module": "wiec_crate_gui",
-        #    "function": "main",
-        #},
+        {
+            "name": "dune_hv_crate_test.py",
+            "key": "dune_hv_crate_test",
+            "module": "wiec_crate_gui",
+            "function": "main",
+        },
         {
             "name": "wiec_ptc_power.py",
             "key": "ptc_setup",

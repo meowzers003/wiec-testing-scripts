@@ -7,6 +7,7 @@ import re
 import time 
 #### ----------------------------------------------------------------------------
 import wiec_serial as WIEC_SERIAL
+import wiec_crate_gui
 
 
 VALID_POWER_STATES = {"on", "off"}
@@ -164,25 +165,10 @@ def wib_power():
 
     time.sleep(100)  # wait for the Zynq to boot up and be ready for commands
     
-    wibs = {} # key is wib number, value is power state (ON/OFF)
+    if not wiec_crate_gui.wibs:
+        wiec_crate_gui.prompt_wib_power_states()
 
-
-    # asks user the wib # of interest to power on/off
-    wib_number = normalize_wib_number(clean_input("Enter the WIB number you want to power on/off: "))
-    wibs[wib_number] = "off"  # Initialize with None
-    state = normalize_power_state(clean_input(f"Enter the power state (on/off) for WIB {wib_number}: "))
-    wibs[wib_number] = state  # Store the state in uppercase
-
-    more = clean_input("Do you want to power on/off more WIBs? (y/n): ")
-    if more.lower() == 'y':
-        while True:
-            wib_number = normalize_wib_number(clean_input("Enter the WIB number you want to power on/off: "))
-            wibs[wib_number] = "OFF"
-            state = normalize_power_state(clean_input(f"Enter the power state (on/off) for WIB {wib_number}: "))
-            wibs[wib_number] = state
-            more = clean_input("Do you want to power on/off more WIBs? (y/n): ")
-            if more.lower() != 'y':
-                break
+    wibs = dict(wiec_crate_gui.wibs) # key is wib number, value is power state (ON/OFF)
     
     power_outputs = WIEC_SERIAL.power_wib(ser, wibs)
     print("\nPower control raw outputs:")
@@ -219,7 +205,6 @@ def main():
     wib_power()
 
     
-
 
 
 
