@@ -300,14 +300,14 @@ def check_checkout_result(data_path, report_path):
     return True  # No fault files found
 
 
-def QC_Process(path="D:", QC_TST_EN=None, input_info=None, pre_info=None):
+def QC_Process(wib_ip,path="D:", QC_TST_EN=None, input_info=None, pre_info=None):
     """Execute QC process and handle errors"""
     sender = "bnlr216@gmail.com"
     password = "vvef tosp minf wwhf"
     receiver = pre_info.get('Email', 'lke@bnl.gov') if pre_info else 'lke@bnl.gov'
 
     while True:
-        QCresult = cts.cts_ssh_FEMB(root="{}/FEMB_QC/".format(path), QC_TST_EN=QC_TST_EN, input_info=input_info)
+        QCresult = cts.cts_ssh_FEMB(wib_ip,root="{}/FEMB_QC/".format(path), QC_TST_EN=QC_TST_EN, input_info=input_info)
         if QCresult != None:
             QCstatus = QCresult[0]
             badchips = QCresult[1]

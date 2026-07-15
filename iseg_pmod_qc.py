@@ -170,7 +170,6 @@ class IsegMPOD:
     # ------------------------------------------------------------
 
     def discover_iseg_modules(self, snapshot: Dict[str, str]) -> Dict[str, str]:
-        print("\n=== Discovering iseg modules ===")
         modules: Dict[str, str] = {}
 
         for oid, encoded_value in snapshot.items():
@@ -182,9 +181,6 @@ class IsegMPOD:
             desc = self.display_value(encoded_value)
             if "iseg" in desc.lower():
                 modules[module_id] = desc
-                print(f"{oid}: {desc}")
-            else:
-                print(f"Skipping {oid}: {desc}")
 
         if not modules:
             raise RuntimeError("No iseg moduleDescription entries found in this crate walk.")
@@ -204,9 +200,9 @@ class IsegMPOD:
     def discover_channels(
         self,
         snapshot: Dict[str, str],
-        allowed_module_ids: Set[str],
+        iseg_modules: Dict[str, str],
     ) -> List[str]:
-        print("\n=== Discovering output channels ===")
+        print("\n=== Discovering iseg output channels ===")
         channels = []
 
         for oid in snapshot:
@@ -222,24 +218,29 @@ class IsegMPOD:
 
         if not channels:
             raise RuntimeError("No output channels found from outputIndex/outputName records.")
-                # skip channels U200-207 for now, seems sussy
-        
+
         channels = [
             channel for channel in channels
-            if not 200 <= int(channel[1:]) <= 207
+            if not 700 <= int(channel[1:]) <= 707
         ]
         channels = [
             channel for channel in channels
-            if self.channel_module_id(channel) in allowed_module_ids
+            if self.channel_module_id(channel) in iseg_modules
         ]
 
         if not channels:
             raise RuntimeError("No output channels found for discovered iseg modules.")
 
-
         channels.sort(key=lambda channel: int(channel[1:]))
-        print(f"Found {len(channels)} iseg output channels:")
-        print(", ".join(channels))
+        channel_assignments: Dict[str, List[str]] = {}
+        for channel in channels:
+            channel_assignments.setdefault(self.channel_module_id(channel), []).append(channel)
+
+        for module_id in sorted(channel_assignments, key=lambda item: int(item[2:])):
+            assigned_channels = ", ".join(channel_assignments[module_id])
+            print(f"{module_id}: {iseg_modules[module_id]} -> {assigned_channels}")
+
+        print(f"Found {len(channels)} iseg output channels total.")
 
         return channels
 
@@ -532,10 +533,13 @@ def main():
 
         # b. Only consider iseg modules from moduleDescription records
         modules = mpod.discover_iseg_modules(initial_snapshot)
-        module_ids = set(modules)
 
         # Discover channels from actual crate
-        channels = mpod.discover_channels(initial_snapshot, module_ids)
+        channels = mpod.discover_channels(initial_snapshot, modules)
+        module_ids = {
+            mpod.channel_module_id(channel)
+            for channel in channels
+        }
 
         # c. Communication errors / alarms
         module_ok = mpod.check_module_health(initial_snapshot, module_ids)
@@ -572,7 +576,7 @@ def main():
             if not channels:
                 shutdown_snapshot = mpod.read_all()
                 shutdown_modules = mpod.discover_iseg_modules(shutdown_snapshot)
-                channels = mpod.discover_channels(shutdown_snapshot, set(shutdown_modules))
+                channels = mpod.discover_channels(shutdown_snapshot, shutdown_modules)
             mpod.turn_off_all(channels, emergency=False)
         except Exception as e:
             print(f"Could not safely turn off channels after interrupt: {e}")

@@ -106,12 +106,12 @@ def main():
             "module": "wiec_wib_setup",
             "function": "wib_power",
         },
-        #{
-        #    "name": "femb_checkout.py",
-        #    "key": "femb_checkout",
-        #    "module": "wiec_femb_checkout",
-        #    "function": "main",
-        #},
+        {
+           "name": "femb_checkout.py",
+           "key": "femb_checkout",
+           "module": "wiec_femb_checkout",
+           "function": "main",
+        },
 
         # {
         #     "name": "continuity_tests.py",

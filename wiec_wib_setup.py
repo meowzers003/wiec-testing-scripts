@@ -13,6 +13,7 @@ VALID_POWER_STATES = {"on", "off"}
 WIB_IP_PREFIX = "10.73.137"
 WIB_IP_LAST_OCTET_BASE = 71
 
+wib_ips = {}
 
 def normalize_wib_number(wib_number):
     wib_number = WIEC_SERIAL.sanitize_terminal_text(wib_number)
@@ -97,39 +98,63 @@ def validate_wib_i2c_outputs(wibs, sensor_outputs):
     return all_passed
 
 
-def validate_wib_ip_outputs(wibs, power_outputs, sensor_outputs):
-    all_passed = True
+def ping_wib(wib_ip_addr):
+    command = ["ping", "-c", "4", str(wib_ip_addr)]
 
+    try:
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"Ping timed out after 10 seconds: {wib_ip_addr}")
+        return False
+
+    output = f"{result.stdout}\n{result.stderr}"
+    loss_match = re.search(r"(\d+(?:\.\d+)?)%\s*packet loss", output)
+    if not loss_match:
+        print(f"Could not parse ping packet loss for {wib_ip_addr}.")
+        if result.stderr.strip():
+            print(result.stderr.strip())
+        return False
+
+    packet_loss = float(loss_match.group(1))
+    return result.returncode == 0 and packet_loss == 0.0
+
+#### function to check if the appropriate wibs are pingable
+def check_wib_ip(wib_ips):
+    fails = 0
+    print(f"----------------------------------------------------")
+    print(f"----------------------------------------------------")
+    print("WIB PING TEST")
+    print(f"----------------------------------------------------")
+    for wib, wib_ip in wib_ips.items():
+        ping_result = ping_wib(wib_ip)
+        if not ping_result:
+            fails += 1
+        print(f"wib #{wib} ip address: {wib_ip} ==> {ping_result}")
+
+    return fails == 0
+
+def validate_wib_ip_outputs(wibs):
+    wib_ips = {}
     for wib, state in wibs.items():
         if state != "on":
             continue
 
         expected_ip = expected_wib_ip(wib)
-        combined_output = power_outputs.get(wib, "")
-        sensor_data = sensor_outputs.get(wib, {})
-        combined_output += "\n" + sensor_data.get("i2cset", "")
-        combined_output += "\n" + sensor_data.get("i2cdetect", "")
+        wib_ips[wib] = expected_ip
 
-        detected_ips = ip_addresses(combined_output)
-        if not detected_ips:
-            print(f"WIB {wib} expected IP: {expected_ip}. No IP address was found in serial output.")
-            continue
-
-        if expected_ip in detected_ips:
-            print(f"WIB {wib} IP check passed: found {expected_ip}.")
-        else:
-            print(
-                f"WIB {wib} IP check failed: expected {expected_ip}, "
-                f"detected {sorted(detected_ips)}."
-            )
-            all_passed = False
-
-    return all_passed
+    return wib_ips
 
 
 def wib_power():
     # globals so they wont initialize upon import 
-    global ser, wibs
+    global ser, wibs, wib_ips
     time.sleep(100)  # wait for the Zynq to boot up and be ready for commands
     ser = WIEC_SERIAL.login()
     # userinput = input("is serial out empty?:")
@@ -175,7 +200,8 @@ def wib_power():
     sensor_outputs = WIEC_SERIAL.sensors_addr(ser, powered_on_wibs)
     print(sensor_outputs)
     i2c_passed = validate_wib_i2c_outputs(powered_on_wibs, sensor_outputs)
-    ip_passed = validate_wib_ip_outputs(powered_on_wibs, power_outputs, sensor_outputs)
+    wib_ips = validate_wib_ip_outputs(powered_on_wibs)
+    ip_passed = check_wib_ip(wib_ips)
     return i2c_passed and ip_passed
     #return True
 
@@ -193,9 +219,6 @@ def main():
     wib_power()
 
     
-
-
-
 
 
 

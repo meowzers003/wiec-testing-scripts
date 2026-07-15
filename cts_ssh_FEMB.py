@@ -15,6 +15,8 @@ import components.assembly_log as log
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+WIB_IP = None
+
 
 def subrun(command, timeout=30, check=True, out=True, exitflg=True, user_input=None, rm=False, shell=False):
     result = None
@@ -134,8 +136,10 @@ def read_csv_to_dict(filename, env, p=False):
     return data
 
 
-def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
+def cts_ssh_FEMB(wib_ip,root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
     # QC_TST_EN = True
+    global WIB_IP
+    WIB_IP = wib_ip
     logs = {}  # from collections import defaultdict report_log01 = defaultdict(dict)
 
     # ============= Common Utility Functions =============
@@ -144,7 +148,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
         print('Powering off FEMB channels...')
         try:
             power_off_cmd = [
-                "ssh", "root@192.168.121.123",
+                "ssh", "root@" + wib_ip,
                 "cd BNL_CE_WIB_SW_QC; python3 top_femb_powering.py off off off off"
             ]
             subrun(power_off_cmd, timeout=60, out=False)
@@ -160,14 +164,14 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
             # 1. Power off all FEMB channels
             print('  - Powering off FEMB channels...')
             power_off_cmd = [
-                "ssh", "root@192.168.121.123",
+                "ssh", "root@" + WIB_IP,
                 "cd BNL_CE_WIB_SW_QC; python3 top_femb_powering.py off off off off"
             ]
             subrun(power_off_cmd, timeout=60, out=False)
 
             # 2. Power off WIB
             print('  - Powering off WIB...')
-            subrun(["ssh", "root@192.168.121.123", "poweroff"], check=False, out=False)
+            subrun(["ssh", "root@" + WIB_IP, "poweroff"], check=False, out=False)
             time.sleep(5)
 
             # 3. Close Rigol power supply
@@ -309,7 +313,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
 
     if QC_TST_EN == 77:
         print(datetime.now(timezone.utc), " : Check if WIB is pingable (it takes < 60s)")
-        command = ["ping", "-c", "3", "192.168.121.123"]
+        command = ["ping", "-c", "3", WIB_IP]
         print("COMMAND: ", command)
         attempt = 0
         while True:
@@ -337,7 +341,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
         now = datetime.now(timezone.utc)
         # Format it to match the output of the `date` command
         formatted_now = now.strftime('%a %b %d %H:%M:%S UTC %Y')
-        command = ["ssh", "root@192.168.121.123", "date -s \'{}\'".format(formatted_now)]
+        command = ["ssh", "root@" + WIB_IP, "date -s \'{}\'".format(formatted_now)]
         result = subrun(command, timeout=30, shell=False)
         time.sleep(0.01)
         if result != None:
@@ -350,7 +354,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
 
     if QC_TST_EN == 0:
         print(datetime.now(timezone.utc), " : Start WIB initialization (it takes < 30s)")
-        command = ["ssh", "root@192.168.121.123", "cd BNL_CE_WIB_SW_QC;  python3 wib_startup.py"]
+        command = ["ssh", "root@" + WIB_IP, "cd BNL_CE_WIB_SW_QC;  python3 wib_startup.py"]
         result = subrun(command, timeout=30)
         time.sleep(0.01)
         if result != None:
@@ -369,7 +373,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
     if QC_TST_EN == 0:
         # input ("anykey to continue now")
         print(datetime.now(timezone.utc), " : load configuration file from PC")
-        wibdst = "root@192.168.121.123:/home/root/BNL_CE_WIB_SW_QC/"
+        wibdst = "root@" + WIB_IP + ":/home/root/BNL_CE_WIB_SW_QC/"
         print(logs['PC_WRCFG_FN'])
         command = ["scp", "-r", logs['PC_WRCFG_FN'], wibdst]
         result = subrun(command, timeout=20)
@@ -377,7 +381,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
         if result != None:
             logs['CFG_wrto_WIB'] = [command, result.stdout]
 
-            wibsrc = "root@192.168.121.123:/home/root/BNL_CE_WIB_SW_QC/femb_info_implement.csv"
+            wibsrc = "root@" + WIB_IP + ":/home/root/BNL_CE_WIB_SW_QC/femb_info_implement.csv"
             pcdst = "./"
             command = ["scp", "-r", wibsrc, pcdst]
             result = subrun(command, timeout=20)
@@ -421,7 +425,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
         if is_ln_mode:
             print("Cold initial (LN mode)")
             ln_command = [
-                "ssh", "root@192.168.121.123",
+                "ssh", "root@" + WIB_IP,
                 f"cd BNL_CE_WIB_SW_QC; python3 top_femb_powering_LN.py {power_en}"
             ]
             ln_result = subrun(ln_command, timeout=60, out=True)  # Display output
@@ -433,7 +437,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
 
         # Execute regular power-on
         command = [
-            "ssh", "root@192.168.121.123",
+            "ssh", "root@" + WIB_IP,
             f"cd BNL_CE_WIB_SW_QC; python3 top_femb_powering.py {power_en}"
         ]
         result = subrun(command, timeout=60, out=True)  # Display output
@@ -454,7 +458,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
             print("\n[Running Cable Test...]")
             time.sleep(1)
             command = [
-                "ssh", "root@192.168.121.123",
+                "ssh", "root@" + WIB_IP,
                 f"cd BNL_CE_WIB_SW_QC; python3 top_chkout_pls_fake_timing.py {slot_list} save 5"
             ]
             result = subrun(command, timeout=60, out=True)  # Display output
@@ -562,7 +566,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
                 # ========== Step 3: Power off FEMB ==========
                 print("\n[3/3] Powering off all FEMBs...")
                 command = [
-                    "ssh", "root@192.168.121.123",
+                    "ssh", "root@" + WIB_IP,
                     "cd BNL_CE_WIB_SW_QC; python3 top_femb_powering.py off off off off"
                 ]
                 subrun(command, timeout=60, out=False)
@@ -591,7 +595,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
     # ========== Begin of 02 FEMB Checkout (Optimized) ==========================
     # Configuration constants
     class Config:
-        WIB_HOST = "root@192.168.121.123"
+        WIB_HOST = "root@" + WIB_IP
         WIB_CHK_DIR = "/home/root/BNL_CE_WIB_SW_QC/CHK/"
         WIB_REPORT_DIR = "/home/root/BNL_CE_WIB_SW_QC/CHK/Report/"
         WIB_LNP_DIR = "/home/root/BNL_CE_WIB_SW_QC/tmp_ln/"
@@ -958,7 +962,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
             print(datetime.now(timezone.utc), " : New Test Item Starts, please wait...")
             print(tms_items[testid])
             # the & is used to close the client, so that the issue can be avoided
-            command = ["ssh", "root@192.168.121.123",
+            command = ["ssh", "root@" + WIB_IP,
                        "cd BNL_CE_WIB_SW_QC; python3 QC_top.py {} -t {}".format(slot_list, testid)]
             user_input_1 = "{}\n{}\n{}\n{}\n{}".format(input_info['tester'], input_info['env'], input_info['toy_TPC'],
                                                        input_info['comment'], FEMB_list)
@@ -1016,7 +1020,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
                         print(f"Error to create folder {directory}")
                         print("Exit anyway")
                         return None
-            wibhost = "root@192.168.121.123:"
+            wibhost = "root@" + WIB_IP + ":"
             fsrc = wibhost + fdir
             # move folder
             command = ["scp -r " + fsrc + " " + fddir]
@@ -1059,7 +1063,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
             print('Begin to remove data at WIB')
             time.sleep(1)
             command = [
-                "ssh", "-o", "BatchMode=yes", "root@192.168.121.123",
+                "ssh", "-o", "BatchMode=yes", "root@" + WIB_IP,
                 "rm -rf /home/root/BNL_CE_WIB_SW_QC/QC/"
             ]
             # t2 = time.time()
@@ -1104,7 +1108,7 @@ def cts_ssh_FEMB(root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
 
     if QC_TST_EN == 6:
         print("Power Off the Linux on WIB PS [6 second]")
-        subrun(["ssh", "root@192.168.121.123", "poweroff"], check=False, out=False)
+        subrun(["ssh", "root@" + WIB_IP, "poweroff"], check=False, out=False)
         time.sleep(6)
         print("Done! [Check that the current should be less than 1.5 A]")
 

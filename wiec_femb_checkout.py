@@ -117,7 +117,7 @@ def save_config(tester_name, tester_email, femb_ids, init_config):
     return csv_data
 
 
-def run_checkout_test(inform):
+def run_checkout_test(wib_ip, inform):
     """
     Run the checkout test for all installed FEMBs.
     Returns paths to data and report directories.
@@ -135,13 +135,13 @@ def run_checkout_test(inform):
     # Step 3: Initialize WIB
     print_step(3, 4, "Initializing WIB")
     qc_path = inform['QC_data_root_folder']
-    QC_Process(path=qc_path, QC_TST_EN=77, input_info=inform)  # Ping WIB
-    QC_Process(path=qc_path, QC_TST_EN=0, input_info=inform)   # Init WIB
-    QC_Process(path=qc_path, QC_TST_EN=1, input_info=inform)   # Init FEMB I2C
+    QC_Process(wib_ip, path=qc_path, QC_TST_EN=77, input_info=inform)  # Ping WIB
+    QC_Process(wib_ip, path=qc_path, QC_TST_EN=0, input_info=inform)   # Init WIB
+    QC_Process(wib_ip, path=qc_path, QC_TST_EN=1, input_info=inform)   # Init FEMB I2C
 
     # Step 4: Run checkout test
     print_step(4, 4, "Running Assembly Checkout Test")
-    data_path, report_path = QC_Process(path=qc_path, QC_TST_EN=2, input_info=inform)  # Checkout
+    data_path, report_path = QC_Process(wib_ip, path=qc_path, QC_TST_EN=2, input_info=inform)  # Checkout
 
     return data_path, report_path
 
@@ -279,7 +279,7 @@ def read_csv_to_dict(filename, env, p=False):
     return data
 
 
-def main():
+def start_femb_checkout(wib_ip):
     """Main checkout workflow"""
     print_header("CTS FEMB Checkout Test")
     print(Fore.GREEN + "This script performs a quick checkout test for FEMB boards." + Style.RESET_ALL)
@@ -363,7 +363,7 @@ def main():
     
     # Step 4: Run checkout test
     print_step(4, 5, "Running Checkout Test")
-    data_path, report_path = run_checkout_test(inform)
+    data_path, report_path = run_checkout_test(wib_ip, inform)
 
         # Step 5: Generate results 
     print_step(5, 6, "Generating Results ")
@@ -384,13 +384,35 @@ def main():
     
     return True if all_passed else False
     
+def main(wibs=None):
+    if wibs is None:
+        import wiec_wib_setup
+        wibs = wiec_wib_setup.wib_ips
 
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except KeyboardInterrupt:
-        print(Fore.YELLOW + "\n\nTest interrupted by user." + Style.RESET_ALL)
-        sys.exit(1)
-    except Exception as e:
-        print(Fore.RED + f"\nError: {e}" + Style.RESET_ALL)
-        sys.exit(1)
+    if not wibs:
+        print_status('error', "No powered-on WIB IPs were provided for FEMB checkout.")
+        return False
+
+    test_results = {}
+    for wib, wib_ip in wibs.items():
+        print(f"------------------ WIB {wib} -----------------------------")
+        test_results[wib] = start_femb_checkout(wib_ip)
+
+    any_fail = False
+    for wib, result in test_results.items():
+        if result is False:
+            print(f"!!!!! WIB {wib}'s FEMB CHECKOUT DIDN'T PASS ")
+            any_fail = True
+
+    return not any_fail
+
+
+# if __name__ == "__main__":
+#     try:
+#         sys.exit(main())
+#     except KeyboardInterrupt:
+#         print(Fore.YELLOW + "\n\nTest interrupted by user." + Style.RESET_ALL)
+#         sys.exit(1)
+#     except Exception as e:
+#         print(Fore.RED + f"\nError: {e}" + Style.RESET_ALL)
+#         sys.exit(1)
