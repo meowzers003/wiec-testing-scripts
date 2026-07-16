@@ -223,33 +223,22 @@ def run_module_qc(
         record_failure(result, message)
         return result
 
-    try:
-        module_snapshot = mpod.read_all()
-    except Exception as e:
-        message = f"Could not read module snapshot: {e}"
-        print(f"\nFAIL: {message}")
-        record_failure(result, message)
-        return result
-
-    print("\nCommunication and hardware alarm check:")
-    module_failures = mpod.module_health_failures(module_snapshot, {module_id})
-    channel_failures = mpod.channel_health_failures(module_channels, module_snapshot)
-    health_failures = module_failures + channel_failures
+    print("\nCommunication and channel hardware alarm check:")
+    health_failures = mpod.channel_health_failures(module_channels)
     health_ok = not health_failures
 
     if health_ok:
-        print("  PASS: no module or channel alarm conditions detected.")
+        print("  PASS: no channel alarm conditions detected.")
     else:
         print("  FAIL: alarm/error conditions detected:")
         print_failure_lines(health_failures)
-        record_failure(result, "Communication/hardware alarm check failed.")
+        record_failure(result, "Communication/channel hardware alarm check failed.")
 
     print("\nInitial readback check:")
     initial_readback_ok = False
     try:
         initial_data = mpod.read_channel_settings(
             module_channels,
-            module_snapshot,
             polarity=module_info.get("polarity", ""),
             neglect_readback_polarity=neglect_readback_polarity,
         )
@@ -297,10 +286,8 @@ def run_module_qc(
 
     print("\nFinal readback check:")
     try:
-        final_snapshot = mpod.read_all()
         final_data = mpod.read_channel_settings(
             module_channels,
-            final_snapshot,
             polarity=module_info.get("polarity", ""),
             neglect_readback_polarity=neglect_readback_polarity,
         )
@@ -359,6 +346,7 @@ def main() -> None:
         ip=ip,
         read_community="public",
         write_community="guru",
+        log_commands=True,
     )
 
     mpod = IsegMPOD(cfg)

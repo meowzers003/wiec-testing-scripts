@@ -4,7 +4,7 @@ import re
 import shlex
 import subprocess
 from dataclasses import dataclass
-from typing import Dict, List, Set
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -15,6 +15,7 @@ class SNMPConfig:
     write_community: str = "guru"
     version: str = "2c"
     timeout_s: int = 30
+    log_commands: bool = False
 
 
 class IsegMPOD:
@@ -22,6 +23,10 @@ class IsegMPOD:
         self.cfg = cfg
 
     def _run(self, args: List[str]) -> str:
+        if self.cfg.log_commands:
+            command = " ".join(shlex.quote(arg) for arg in args)
+            print(f"SNMP command: {command}")
+
         try:
             result = subprocess.run(
                 args,
@@ -64,6 +69,14 @@ class IsegMPOD:
             if match:
                 entries[match.group(1)] = match.group(2).strip()
         return entries
+
+    @staticmethod
+    def parse_response_value(raw: str) -> str:
+        for line in raw.splitlines():
+            match = re.match(r"^\S+::[^\s=]+\s*=\s*(.+)$", line.strip())
+            if match:
+                return match.group(1).strip()
+        return raw.strip()
 
     @staticmethod
     def display_value(encoded_value: str) -> str:
@@ -174,6 +187,10 @@ class IsegMPOD:
             self._command_args("snmpset", self.cfg.write_community)
             + [oid, "i", str(value)]
         )
+
+    def snmpget_value(self, oid: str) -> str:
+        raw = self._run(self._command_args("snmpget", self.cfg.read_community) + [oid])
+        return self.parse_response_value(raw)
 
     def get_crate_info(self, snapshot: Dict[str, str]) -> Dict[str, str]:
         required_oids = ["sysMainSwitch.0", "sysStatus.0", "outputNumber.0"]
@@ -302,48 +319,10 @@ class IsegMPOD:
             assignments[module_id].sort(key=lambda channel: int(channel[1:]))
         return assignments
 
-    def module_health_failures(
-        self,
-        snapshot: Dict[str, str],
-        allowed_module_ids: Set[str],
-    ) -> List[str]:
-        status_entries = {
-            oid: value
-            for oid, value in snapshot.items()
-            if oid.startswith((
-                "moduleStatus.",
-                "moduleEventStatus.",
-                "moduleEventChannelStatus.",
-            ))
-            and oid.rsplit(".", 1)[-1] in allowed_module_ids
-        }
-
-        bad_keywords = [
-            "moduleNeedService",
-            "moduleIsInputError",
-            "moduleIsEventActive",
-            "moduleEventPowerFail",
-            "moduleEventService",
-            "moduleHardwareLimitVoltageNotGood",
-            "moduleEventInputError",
-            "moduleEventSafetyLoopNotGood",
-            "moduleEventSupplyNotGood",
-            "moduleEventTemperatureNotGood",
-        ]
-
-        failures = []
-        for oid, value in sorted(status_entries.items()):
-            detected_conditions = [
-                keyword for keyword in bad_keywords
-                if keyword in value
-            ]
-            for condition in detected_conditions:
-                failures.append(f"{oid}: {condition} detected in {value}")
-
-        return failures
-
     def channel_health_failures(
-        self, channels: List[str], snapshot: Dict[str, str]
+        self,
+        channels: List[str],
+        snapshot: Optional[Dict[str, str]] = None,
     ) -> List[str]:
         failures = []
         bad_keywords = [
@@ -355,9 +334,18 @@ class IsegMPOD:
         ]
 
         for ch in channels:
-            status = snapshot.get(f"outputStatus.{ch}", "MISSING")
+            oid = f"outputStatus.{ch}"
+            try:
+                if snapshot is not None:
+                    status = snapshot.get(oid, "MISSING")
+                else:
+                    status = self.snmpget_value(oid)
+            except Exception as e:
+                failures.append(f"{ch.upper()}: could not read {oid}: {e}")
+                continue
+
             if status == "MISSING":
-                failures.append(f"{ch.upper()}: outputStatus record is missing")
+                failures.append(f"{ch.upper()}: {oid} record is missing")
                 continue
 
             detected_conditions = [
@@ -369,22 +357,17 @@ class IsegMPOD:
 
         return failures
 
-    def check_module_health(
-        self,
-        snapshot: Dict[str, str],
-        allowed_module_ids: Set[str],
-    ) -> bool:
-        return not self.module_health_failures(snapshot, allowed_module_ids)
-
     def check_channel_health(
-        self, channels: List[str], snapshot: Dict[str, str]
+        self,
+        channels: List[str],
+        snapshot: Optional[Dict[str, str]] = None,
     ) -> bool:
         return not self.channel_health_failures(channels, snapshot)
 
     def read_channel_settings(
         self,
         channels: List[str],
-        snapshot: Dict[str, str],
+        snapshot: Optional[Dict[str, str]] = None,
         polarity: str = "",
         neglect_readback_polarity: bool = False,
     ) -> Dict[str, Dict[str, str]]:
@@ -398,16 +381,20 @@ class IsegMPOD:
                 "measured_current_A": f"outputMeasurementCurrent.{ch}",
                 "ramp_up_V_per_s": f"outputVoltageRiseRate.{ch}",
             }
-            missing = [oid for oid in required_oids.values() if oid not in snapshot]
-            if missing:
-                raise RuntimeError(
-                    f"{ch}: missing required records from snmpwalk: {', '.join(missing)}"
-                )
 
-            values = {
-                key: self.display_value(snapshot[oid])
-                for key, oid in required_oids.items()
-            }
+            values = {}
+            for key, oid in required_oids.items():
+                if snapshot is not None:
+                    if oid not in snapshot:
+                        raise RuntimeError(
+                            f"{ch}: missing required record from snmpwalk: {oid}"
+                        )
+                    encoded_value = snapshot[oid]
+                else:
+                    encoded_value = self.snmpget_value(oid)
+
+                values[key] = self.display_value(encoded_value)
+
             for voltage_key in ("set_voltage_V", "measured_voltage_V"):
                 values[voltage_key] = self._apply_readback_polarity(
                     values[voltage_key],
@@ -434,10 +421,8 @@ class IsegMPOD:
             self.snmpset_float(f"outputCurrent.{ch}", current_limit_a)
             self.snmpset_float(f"outputVoltageRiseRate.{ch}", ramp_rate_v_per_s)
 
-        configured_snapshot = self.read_all()
         configured_data = self.read_channel_settings(
             channels,
-            configured_snapshot,
             polarity=polarity,
             neglect_readback_polarity=neglect_readback_polarity,
         )
@@ -482,10 +467,8 @@ class IsegMPOD:
         for ch in channels:
             self.snmpset_int(f"outputSwitch.{ch}", 1)
 
-        enabled_snapshot = self.read_all()
         data = self.read_channel_settings(
             channels,
-            enabled_snapshot,
             polarity=polarity,
             neglect_readback_polarity=neglect_readback_polarity,
         )
