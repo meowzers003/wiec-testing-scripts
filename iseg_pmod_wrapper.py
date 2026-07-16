@@ -106,6 +106,54 @@ class IsegMPOD:
 
         return ""
 
+    @staticmethod
+    def parse_module_description(description: str) -> Dict[str, str]:
+        parts = [part.strip() for part in description.split(",")]
+        fields = {
+            "module_name": parts[0] if len(parts) > 0 else "UNKNOWN",
+            "firmware_name": parts[1] if len(parts) > 1 else "UNKNOWN",
+            "channel_count": parts[2] if len(parts) > 2 else "UNKNOWN",
+            "serial_number": parts[3] if len(parts) > 3 else "UNKNOWN",
+            "firmware_number": parts[4] if len(parts) > 4 else "UNKNOWN",
+        }
+        return fields
+
+    @staticmethod
+    def _channel_count(module_info: Dict[str, str]) -> int:
+        try:
+            return int(module_info.get("channel_count", "0"))
+        except ValueError:
+            return 0
+
+    @staticmethod
+    def _module_number(module_id: str) -> int:
+        match = re.fullmatch(r"ma(\d+)", module_id)
+        if not match:
+            raise ValueError(f"Unexpected module id format: {module_id}")
+        return int(match.group(1))
+
+    @staticmethod
+    def _apply_readback_polarity(
+        value: str,
+        polarity: str,
+        neglect_readback_polarity: bool,
+    ) -> str:
+        if not neglect_readback_polarity:
+            return value
+
+        polarity = polarity.lower()
+        if polarity not in {"positive", "negative"}:
+            return value
+
+        try:
+            numeric_value = float(value)
+        except ValueError:
+            return value
+
+        magnitude = abs(numeric_value)
+        signed_value = magnitude if polarity == "positive" else -magnitude
+        return f"{signed_value:g}"
+
     def read_all(self) -> Dict[str, str]:
         raw = self._run(self._command_args("snmpwalk", self.cfg.read_community))
         entries = self.parse_walk_output(raw)
@@ -169,14 +217,21 @@ class IsegMPOD:
             if "iseg" not in description.lower():
                 continue
 
+            description_info = self.parse_module_description(description)
+            serial_number = self._find_snapshot_value(snapshot, [
+                f"moduleSerialNumber.{module_id}",
+            ]) or description_info["serial_number"]
+            firmware_number = self._find_snapshot_value(snapshot, [
+                f"moduleFirmwareVersion.{module_id}",
+            ]) or description_info["firmware_number"]
+
             modules[module_id] = {
                 "description": description,
-                "serial_number": self._find_snapshot_value(snapshot, [
-                    f"moduleSerialNumber.{module_id}",
-                ]),
-                "firmware_version": self._find_snapshot_value(snapshot, [
-                    f"moduleFirmwareVersion.{module_id}",
-                ]),
+                "module_name": description_info["module_name"],
+                "firmware_name": description_info["firmware_name"],
+                "channel_count": description_info["channel_count"],
+                "serial_number": serial_number,
+                "firmware_number": firmware_number,
             }
 
         if not modules:
@@ -226,6 +281,19 @@ class IsegMPOD:
         channels.sort(key=lambda channel: int(channel[1:]))
         return channels
 
+    def expected_channels_for_module(
+        self,
+        module_id: str,
+        module_info: Dict[str, str],
+    ) -> List[str]:
+        module_number = self._module_number(module_id)
+        channel_count = self._channel_count(module_info)
+        start_index = module_number * 100
+        return [
+            f"u{channel_index}"
+            for channel_index in range(start_index, start_index + channel_count)
+        ]
+
     def channels_by_module(self, channels: List[str]) -> Dict[str, List[str]]:
         assignments: Dict[str, List[str]] = {}
         for channel in channels:
@@ -234,11 +302,11 @@ class IsegMPOD:
             assignments[module_id].sort(key=lambda channel: int(channel[1:]))
         return assignments
 
-    def check_module_health(
+    def module_health_failures(
         self,
         snapshot: Dict[str, str],
         allowed_module_ids: Set[str],
-    ) -> bool:
+    ) -> List[str]:
         status_entries = {
             oid: value
             for oid, value in snapshot.items()
@@ -249,9 +317,6 @@ class IsegMPOD:
             ))
             and oid.rsplit(".", 1)[-1] in allowed_module_ids
         }
-
-        if not status_entries:
-            return True
 
         bad_keywords = [
             "moduleNeedService",
@@ -266,39 +331,62 @@ class IsegMPOD:
             "moduleEventTemperatureNotGood",
         ]
 
-        combined = "\n".join(status_entries.values())
-        failed = [kw for kw in bad_keywords if kw in combined]
+        failures = []
+        for oid, value in sorted(status_entries.items()):
+            detected_conditions = [
+                keyword for keyword in bad_keywords
+                if keyword in value
+            ]
+            for condition in detected_conditions:
+                failures.append(f"{oid}: {condition} detected in {value}")
 
-        if failed:
-            return False
-        return True
+        return failures
 
-    def check_channel_health(
+    def channel_health_failures(
         self, channels: List[str], snapshot: Dict[str, str]
-    ) -> bool:
-        all_ok = True
+    ) -> List[str]:
+        failures = []
+        bad_keywords = [
+            "outputFailure",
+            "outputEmergencyOff",
+            "outputInhibit",
+            "outputCurrentBoundsExceeded",
+            "outputVoltageBoundsExceeded",
+        ]
 
         for ch in channels:
             status = snapshot.get(f"outputStatus.{ch}", "MISSING")
             if status == "MISSING":
-                all_ok = False
+                failures.append(f"{ch.upper()}: outputStatus record is missing")
                 continue
 
-            bad_keywords = [
-                "outputFailure",
-                "outputEmergencyOff",
-                "outputInhibit",
-                "outputCurrentBoundsExceeded",
-                "outputVoltageBoundsExceeded",
+            detected_conditions = [
+                keyword for keyword in bad_keywords
+                if keyword in status
             ]
+            for condition in detected_conditions:
+                failures.append(f"{ch.upper()}: {condition} detected in {status}")
 
-            if any(keyword in status for keyword in bad_keywords):
-                all_ok = False
+        return failures
 
-        return all_ok
+    def check_module_health(
+        self,
+        snapshot: Dict[str, str],
+        allowed_module_ids: Set[str],
+    ) -> bool:
+        return not self.module_health_failures(snapshot, allowed_module_ids)
+
+    def check_channel_health(
+        self, channels: List[str], snapshot: Dict[str, str]
+    ) -> bool:
+        return not self.channel_health_failures(channels, snapshot)
 
     def read_channel_settings(
-        self, channels: List[str], snapshot: Dict[str, str]
+        self,
+        channels: List[str],
+        snapshot: Dict[str, str],
+        polarity: str = "",
+        neglect_readback_polarity: bool = False,
     ) -> Dict[str, Dict[str, str]]:
         data = {}
 
@@ -320,6 +408,12 @@ class IsegMPOD:
                 key: self.display_value(snapshot[oid])
                 for key, oid in required_oids.items()
             }
+            for voltage_key in ("set_voltage_V", "measured_voltage_V"):
+                values[voltage_key] = self._apply_readback_polarity(
+                    values[voltage_key],
+                    polarity,
+                    neglect_readback_polarity,
+                )
 
             data[ch] = values
 
@@ -331,6 +425,8 @@ class IsegMPOD:
         voltage_setpoint_v: float = 50.0,
         current_limit_a: float = 0.001,
         ramp_rate_v_per_s: float = 100.0,
+        polarity: str = "",
+        neglect_readback_polarity: bool = False,
     ) -> Dict[str, Dict[str, str]]:
         for ch in channels:
             self.snmpset_int(f"outputSwitch.{ch}", 10)
@@ -339,26 +435,60 @@ class IsegMPOD:
             self.snmpset_float(f"outputVoltageRiseRate.{ch}", ramp_rate_v_per_s)
 
         configured_snapshot = self.read_all()
-        configured_data = self.read_channel_settings(channels, configured_snapshot)
+        configured_data = self.read_channel_settings(
+            channels,
+            configured_snapshot,
+            polarity=polarity,
+            neglect_readback_polarity=neglect_readback_polarity,
+        )
+        expected_voltage_v = voltage_setpoint_v
+        if neglect_readback_polarity:
+            if polarity.lower() == "negative":
+                expected_voltage_v = -abs(voltage_setpoint_v)
+            elif polarity.lower() == "positive":
+                expected_voltage_v = abs(voltage_setpoint_v)
 
+        verification_failures = []
         for ch in channels:
             set_v = float(configured_data[ch]["set_voltage_V"])
             set_i = float(configured_data[ch]["set_current_A"])
             ramp_up = float(configured_data[ch]["ramp_up_V_per_s"])
 
-            if abs(set_v - voltage_setpoint_v) > 1.0:
-                raise RuntimeError(f"{ch}: Voltage readback mismatch. Refusing to turn ON.")
+            if abs(set_v - expected_voltage_v) > 1.0:
+                verification_failures.append(
+                    f"{ch.upper()}: voltage readback mismatch "
+                    f"(expected {expected_voltage_v:g} V, got {set_v:g} V)"
+                )
 
             if abs(set_i - current_limit_a) > 0.0001:
-                raise RuntimeError(f"{ch}: Current limit readback mismatch. Refusing to turn ON.")
+                verification_failures.append(
+                    f"{ch.upper()}: current limit readback mismatch "
+                    f"(expected {current_limit_a:g} A, got {set_i:g} A)"
+                )
 
             if abs(ramp_up - ramp_rate_v_per_s) > 5.0:
-                raise RuntimeError(f"{ch}: Ramp-rate readback mismatch. Refusing to turn ON.")
+                verification_failures.append(
+                    f"{ch.upper()}: ramp-rate readback mismatch "
+                    f"(expected {ramp_rate_v_per_s:g} V/s, got {ramp_up:g} V/s)"
+                )
 
+        if verification_failures:
+            detail = "\n  - ".join(verification_failures)
+            raise RuntimeError(
+                "Pre-ON setting verification failed. Refusing to turn ON.\n"
+                f"  - {detail}"
+            )
+
+        for ch in channels:
             self.snmpset_int(f"outputSwitch.{ch}", 1)
 
         enabled_snapshot = self.read_all()
-        data = self.read_channel_settings(channels, enabled_snapshot)
+        data = self.read_channel_settings(
+            channels,
+            enabled_snapshot,
+            polarity=polarity,
+            neglect_readback_polarity=neglect_readback_polarity,
+        )
         return data
 
     def clear_events(self, channels: List[str]) -> None:
