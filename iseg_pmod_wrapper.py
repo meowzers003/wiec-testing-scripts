@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple
 MAX_SNMP_RETRIES = 3
 RAMP_MONITOR_EXTRA_SECONDS = 2.0
 RAMP_RATE_TOLERANCE_FRACTION = 0.10
+RAMP_RATE_READBACK_TOLERANCE_FRACTION = 0.05
 
 
 class RampVerificationError(RuntimeError):
@@ -213,6 +214,21 @@ class IsegMPOD:
         if polarity.lower() == "positive":
             return abs(voltage_setpoint_v)
         return voltage_setpoint_v
+
+    @staticmethod
+    def _expected_ramp_rate(
+        ramp_rate_v_per_s: float,
+        polarity: str,
+        neglect_readback_polarity: bool,
+    ) -> float:
+        if not neglect_readback_polarity:
+            return ramp_rate_v_per_s
+
+        if polarity.lower() == "negative":
+            return -abs(ramp_rate_v_per_s)
+        if polarity.lower() == "positive":
+            return abs(ramp_rate_v_per_s)
+        return ramp_rate_v_per_s
 
     @staticmethod
     def _target_voltage_reached(measured_voltage_v: float, target_voltage_v: float) -> bool:
@@ -446,9 +462,14 @@ class IsegMPOD:
 
                 values[key] = self.display_value(encoded_value)
 
-            for voltage_key in ("set_voltage_V", "measured_voltage_V"):
-                values[voltage_key] = self._apply_readback_polarity(
-                    values[voltage_key],
+            polarity_sensitive_keys = (
+                "set_voltage_V",
+                "measured_voltage_V",
+                "ramp_up_V_per_s",
+            )
+            for data_key in polarity_sensitive_keys:
+                values[data_key] = self._apply_readback_polarity(
+                    values[data_key],
                     polarity,
                     neglect_readback_polarity,
                 )
@@ -579,6 +600,11 @@ class IsegMPOD:
             polarity,
             neglect_readback_polarity,
         )
+        expected_ramp_rate_v_per_s = self._expected_ramp_rate(
+            ramp_rate_v_per_s,
+            polarity,
+            neglect_readback_polarity,
+        )
 
         verification_failures = []
         ramp_warning_channels = []
@@ -600,11 +626,17 @@ class IsegMPOD:
                     f"(expected {current_limit_a:g} A, got {set_i:g} A)"
                 )
 
-            if abs(ramp_up - ramp_rate_v_per_s) > 5.0:
+            ramp_readback_tolerance = (
+                abs(expected_ramp_rate_v_per_s) * RAMP_RATE_READBACK_TOLERANCE_FRACTION
+            )
+            if abs(ramp_up - expected_ramp_rate_v_per_s) > ramp_readback_tolerance:
                 ramp_warning_channels.append(ch)
                 warnings.append(
                     f"{ch.upper()}: ramp-rate readback mismatch "
-                    f"(commanded {ramp_rate_v_per_s:g} V/s, read back {ramp_up:g} V/s). "
+                    f"(expected readback {expected_ramp_rate_v_per_s:g} V/s "
+                    f"from commanded {ramp_rate_v_per_s:g} V/s, "
+                    f"read back {ramp_up:g} V/s; tolerance "
+                    f"+/-{ramp_readback_tolerance:g} V/s). "
                     "Proceeding with timed voltage/status monitoring instead of "
                     "trusting ramp-rate readback."
                 )
