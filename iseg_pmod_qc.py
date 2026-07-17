@@ -12,13 +12,17 @@ from iseg_pmod_wrapper import IsegMPOD, RampVerificationError, SNMPConfig
 SPREADSHEET_RESULTS_DIR = Path.cwd() / "HV Modules Test Results"
 TEXT_OUTPUT_ROOT = Path.cwd() / "HV PMOD QC Output Text Files"
 RAMP_WARNING_DIR = Path.cwd() / "HV PMOD QC Ramp Warnings"
+ISEG_RESULTS_CSV = SPREADSHEET_RESULTS_DIR / "iseg_hv_modules_qc_results.csv"
 
-CHANNEL_PARAMETERS = [
-    ("set_voltage_V", "set voltage [V]"),
-    ("measured_voltage_V", "measured voltage [V]"),
-    ("set_current_A", "set current [A]"),
-    ("measured_current_A", "measured current [A]"),
-    ("ramp_up_V_per_s", "ramp up [V/s]"),
+ISEG_RESULTS_HEADERS = [
+    "tester",
+    "date-time",
+    "Part Number (Firmware Name)",
+    "Serial Number",
+    "Firmware Number",
+    "Communication Test (OK/Fail)",
+    "Initial Readback Result (OK/Fail)",
+    "Setting to limits (OK/Fail)",
 ]
 
 DEFAULT_VOLTAGE_V = 2000.0
@@ -101,15 +105,6 @@ def rename_terminal_log(log_path: Path, test_title: str) -> Path:
     return final_path
 
 
-def module_csv_path(module_info: Dict[str, str]) -> Path:
-    module_name = safe_filename_part(module_info.get("module_name", "iseg").lower())
-    serial_number = safe_filename_part(module_info.get("serial_number", "UNKNOWN"))
-    firmware_name = safe_filename_part(module_info.get("firmware_name", "UNKNOWN"))
-    firmware_number = safe_filename_part(module_info.get("firmware_number", "UNKNOWN"))
-    filename = f"{module_name}_{serial_number}_{firmware_name}_{firmware_number}.csv"
-    return SPREADSHEET_RESULTS_DIR / filename
-
-
 def module_warning_path(module_info: Dict[str, str], module_channels: List[str]) -> Path:
     now = datetime.now()
     timestamp = now.strftime("%Y-%m-%d_%H%M%S")
@@ -152,60 +147,32 @@ def write_module_warnings(
     return warning_path
 
 
-def make_readback_columns(channels: List[str]) -> List[str]:
-    columns = []
-    for channel_number, _ in enumerate(channels):
-        for _, column_label in CHANNEL_PARAMETERS:
-            columns.append(f"ch{channel_number} - {column_label}")
-    return columns
-
-
-def make_csv_headers(channels: List[str]) -> List[List[str]]:
-    readback_columns = make_readback_columns(channels)
-    leading_columns = ["test title", "date/time"]
-    group_header = (
-        leading_columns
-        + ["initial readback"] * len(readback_columns)
-        + ["final readback"] * len(readback_columns)
-    )
-    measurement_header = leading_columns + readback_columns + readback_columns
-    return [group_header, measurement_header]
-
-
-def append_readback_values(
-    row: List[str],
-    channels: List[str],
-    channel_data: Dict[str, Dict[str, str]],
-) -> None:
-    for ch in channels:
-        values = channel_data.get(ch, {})
-        for data_key, _ in CHANNEL_PARAMETERS:
-            row.append(values.get(data_key, ""))
-
-
-def append_module_test_result_to_csv(
-    test_title: str,
+def append_module_test_summary_to_csv(
+    tester: str,
     module_info: Dict[str, str],
-    channels: List[str],
-    initial_data: Dict[str, Dict[str, str]],
-    final_data: Dict[str, Dict[str, str]],
+    result: Dict[str, Any],
 ) -> None:
     SPREADSHEET_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    row = [test_title, timestamp]
-    append_readback_values(row, channels, initial_data)
-    append_readback_values(row, channels, final_data)
+    row = [
+        tester,
+        timestamp,
+        module_info.get("firmware_name", "UNKNOWN"),
+        module_info.get("serial_number", "UNKNOWN"),
+        module_info.get("firmware_number", "UNKNOWN"),
+        result.get("communication_test", "Fail"),
+        result.get("initial_readback_result", "Fail"),
+        result.get("setting_to_limits", "Fail"),
+    ]
 
-    csv_path = module_csv_path(module_info)
-    write_header = not csv_path.exists() or csv_path.stat().st_size == 0
-    with csv_path.open("a", newline="") as csv_file:
+    write_header = not ISEG_RESULTS_CSV.exists() or ISEG_RESULTS_CSV.stat().st_size == 0
+    with ISEG_RESULTS_CSV.open("a", newline="") as csv_file:
         writer = csv.writer(csv_file)
         if write_header:
-            for header in make_csv_headers(channels):
-                writer.writerow(header)
+            writer.writerow(ISEG_RESULTS_HEADERS)
         writer.writerow(row)
 
-    print(f"\nSaved module test result data to {csv_path}")
+    print(f"\nSaved module test summary to {ISEG_RESULTS_CSV}")
 
 
 def display_crate_info(crate_info: Dict[str, str]) -> None:
@@ -352,7 +319,7 @@ def run_module_qc(
     module_id: str,
     module_info: Dict[str, str],
     module_channels: List[str],
-    test_title: str,
+    tester: str,
 ) -> Dict[str, Any]:
     neglect_readback_polarity = module_info.get("neglect_readback_polarity", False)
     result: Dict[str, Any] = {
@@ -361,6 +328,9 @@ def run_module_qc(
         "polarity": module_info.get("polarity", "UNKNOWN"),
         "neglect_readback_polarity": neglect_readback_polarity,
         "channel_range": format_channel_range(module_channels),
+        "communication_test": "Fail",
+        "initial_readback_result": "Fail",
+        "setting_to_limits": "Fail",
         "failures": [],
         "warnings": [],
     }
@@ -371,6 +341,7 @@ def run_module_qc(
         message = "No channel indices were assigned to this module."
         print(f"\nFAIL: {message}")
         record_failure(result, message)
+        append_module_test_summary_to_csv(tester, module_info, result)
         return result
 
     print("\nCommunication and channel hardware alarm check:")
@@ -379,24 +350,23 @@ def run_module_qc(
 
     if health_ok:
         print("  PASS: no channel alarm conditions detected.")
+        result["communication_test"] = "OK"
     else:
         print("  FAIL: alarm/error conditions detected:")
         print_failure_lines(health_failures)
         record_failure(result, "Communication/channel hardware alarm check failed.")
 
-    initial_data: Dict[str, Dict[str, str]] = {}
-    final_data: Dict[str, Dict[str, str]] = {}
-
     print("\nInitial readback check:")
     initial_readback_ok = False
     try:
-        initial_data = mpod.read_channel_settings(
+        mpod.read_channel_settings(
             module_channels,
             polarity=module_info.get("polarity", ""),
             neglect_readback_polarity=neglect_readback_polarity,
         )
         print("  PASS: initial readback captured.")
         initial_readback_ok = True
+        result["initial_readback_result"] = "OK"
     except Exception as e:
         message = f"Initial readback failed: {e}"
         print(f"  FAIL: {message}")
@@ -418,6 +388,7 @@ def run_module_qc(
                 print("  PASS with ramp warning(s):")
                 print_failure_lines(ramp_warnings)
             print("  PASS: settings verified and channels turned ON.")
+            result["setting_to_limits"] = "OK"
         except RampVerificationError as e:
             result["warnings"].extend(e.warnings)
             message = f"Voltage/current/ramp setting check failed: {e}"
@@ -435,7 +406,7 @@ def run_module_qc(
 
     print("\nFinal readback check:")
     try:
-        final_data = mpod.read_channel_settings(
+        mpod.read_channel_settings(
             module_channels,
             polarity=module_info.get("polarity", ""),
             neglect_readback_polarity=neglect_readback_polarity,
@@ -446,13 +417,7 @@ def run_module_qc(
         print(f"  FAIL: {message}")
         record_failure(result, message)
 
-    append_module_test_result_to_csv(
-        test_title,
-        module_info,
-        module_channels,
-        initial_data,
-        final_data,
-    )
+    append_module_test_summary_to_csv(tester, module_info, result)
     write_module_warnings(module_info, module_channels, result["warnings"])
 
     return result
@@ -519,6 +484,10 @@ def main() -> None:
             test_title = "Untitled ISEG PMOD QC Test"
         rename_terminal_log(log_path, test_title)
         print(f"Test title: {test_title}")
+        tester = input("Enter tester name for CSV logging: ").strip()
+        if not tester:
+            tester = "UNKNOWN"
+        print(f"Tester: {tester}")
 
         initial_snapshot = mpod.read_all()
         crate_info = mpod.get_crate_info(initial_snapshot)
@@ -568,7 +537,7 @@ def main() -> None:
                     module_id,
                     modules[module_id],
                     module_channels_by_id[module_id],
-                    test_title,
+                    tester,
                 )
             )
 
