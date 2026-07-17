@@ -3,11 +3,20 @@
 import re
 import shlex
 import subprocess
+import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 MAX_SNMP_RETRIES = 3
+RAMP_MONITOR_EXTRA_SECONDS = 2.0
+RAMP_RATE_TOLERANCE_FRACTION = 0.10
+
+
+class RampVerificationError(RuntimeError):
+    def __init__(self, message: str, warnings: List[str]):
+        super().__init__(message)
+        self.warnings = warnings
 
 
 @dataclass
@@ -189,6 +198,25 @@ class IsegMPOD:
         magnitude = abs(numeric_value)
         signed_value = magnitude if polarity == "positive" else -magnitude
         return f"{signed_value:g}"
+
+    @staticmethod
+    def _expected_voltage(
+        voltage_setpoint_v: float,
+        polarity: str,
+        neglect_readback_polarity: bool,
+    ) -> float:
+        if not neglect_readback_polarity:
+            return voltage_setpoint_v
+
+        if polarity.lower() == "negative":
+            return -abs(voltage_setpoint_v)
+        if polarity.lower() == "positive":
+            return abs(voltage_setpoint_v)
+        return voltage_setpoint_v
+
+    @staticmethod
+    def _target_voltage_reached(measured_voltage_v: float, target_voltage_v: float) -> bool:
+        return abs(measured_voltage_v) >= abs(target_voltage_v) - 1.0
 
     def read_all(self) -> Dict[str, str]:
         raw = self._run(self._command_args("snmpwalk", self.cfg.read_community))
@@ -429,6 +457,103 @@ class IsegMPOD:
 
         return data
 
+    def read_measured_voltage(
+        self,
+        channel: str,
+        polarity: str = "",
+        neglect_readback_polarity: bool = False,
+    ) -> float:
+        encoded_value = self.snmpget_value(f"outputMeasurementSenseVoltage.{channel}")
+        value = self.display_value(encoded_value)
+        value = self._apply_readback_polarity(
+            value,
+            polarity,
+            neglect_readback_polarity,
+        )
+        return float(value)
+
+    def monitor_channel_ramp(
+        self,
+        channel: str,
+        target_voltage_v: float,
+        commanded_ramp_rate_v_per_s: float,
+        polarity: str = "",
+        neglect_readback_polarity: bool = False,
+    ) -> Tuple[bool, List[str]]:
+        warnings = []
+        if commanded_ramp_rate_v_per_s <= 0:
+            raise RuntimeError(
+                f"{channel.upper()}: commanded ramp rate must be positive for ramp monitoring."
+            )
+
+        monitor_duration_s = (
+            abs(target_voltage_v) / commanded_ramp_rate_v_per_s
+            + RAMP_MONITOR_EXTRA_SECONDS
+        )
+        start_time = time.monotonic()
+        first_time = start_time
+        first_voltage = self.read_measured_voltage(
+            channel,
+            polarity=polarity,
+            neglect_readback_polarity=neglect_readback_polarity,
+        )
+        last_time = first_time
+        last_voltage = first_voltage
+
+        print(
+            f"Monitoring {channel.upper()} ramp for up to {monitor_duration_s:.1f} s "
+            f"toward {target_voltage_v:g} V."
+        )
+
+        while True:
+            status = self.snmpget_value(f"outputStatus.{channel}")
+            measured_voltage = self.read_measured_voltage(
+                channel,
+                polarity=polarity,
+                neglect_readback_polarity=neglect_readback_polarity,
+            )
+            last_time = time.monotonic()
+            last_voltage = measured_voltage
+            elapsed_s = last_time - start_time
+
+            print(
+                f"  {channel.upper()} t={elapsed_s:.1f} s "
+                f"status={status} measured={measured_voltage:g} V"
+            )
+
+            if self._target_voltage_reached(measured_voltage, target_voltage_v):
+                warnings.append(
+                    f"{channel.upper()}: ramp-rate readback was unreliable, but target "
+                    f"{target_voltage_v:g} V was reached in {elapsed_s:.1f} s "
+                    f"within the expected {monitor_duration_s:.1f} s window."
+                )
+                return True, warnings
+
+            if elapsed_s >= monitor_duration_s:
+                break
+
+            time.sleep(1.0)
+
+        elapsed_measurement_s = max(last_time - first_time, 1e-9)
+        empirical_ramp_rate = (
+            abs(last_voltage - first_voltage) / elapsed_measurement_s
+        )
+        lower_bound = commanded_ramp_rate_v_per_s * (1.0 - RAMP_RATE_TOLERANCE_FRACTION)
+        upper_bound = commanded_ramp_rate_v_per_s * (1.0 + RAMP_RATE_TOLERANCE_FRACTION)
+        within_tolerance = lower_bound <= empirical_ramp_rate <= upper_bound
+
+        warnings.append(
+            f"{channel.upper()}: target {target_voltage_v:g} V was not reached within "
+            f"{monitor_duration_s:.1f} s. Empirical ramp estimate: "
+            f"{empirical_ramp_rate:.3g} V/s from {first_voltage:g} V to "
+            f"{last_voltage:g} V over {elapsed_measurement_s:.1f} s. "
+            f"Commanded ramp rate: {commanded_ramp_rate_v_per_s:g} V/s. "
+            f"This is {'within' if within_tolerance else 'outside'} the "
+            f"{RAMP_RATE_TOLERANCE_FRACTION:.0%} tolerance window."
+        )
+
+        return within_tolerance, warnings
+
     def configure_and_turn_on(
         self,
         channels: List[str],
@@ -437,7 +562,7 @@ class IsegMPOD:
         ramp_rate_v_per_s: float = 100.0,
         polarity: str = "",
         neglect_readback_polarity: bool = False,
-    ) -> Dict[str, Dict[str, str]]:
+    ) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
         for ch in channels:
             self.snmpset_int(f"outputSwitch.{ch}", 10)
             self.snmpset_float(f"outputVoltage.{ch}", voltage_setpoint_v)
@@ -449,14 +574,15 @@ class IsegMPOD:
             polarity=polarity,
             neglect_readback_polarity=neglect_readback_polarity,
         )
-        expected_voltage_v = voltage_setpoint_v
-        if neglect_readback_polarity:
-            if polarity.lower() == "negative":
-                expected_voltage_v = -abs(voltage_setpoint_v)
-            elif polarity.lower() == "positive":
-                expected_voltage_v = abs(voltage_setpoint_v)
+        expected_voltage_v = self._expected_voltage(
+            voltage_setpoint_v,
+            polarity,
+            neglect_readback_polarity,
+        )
 
         verification_failures = []
+        ramp_warning_channels = []
+        warnings = []
         for ch in channels:
             set_v = float(configured_data[ch]["set_voltage_V"])
             set_i = float(configured_data[ch]["set_current_A"])
@@ -475,9 +601,12 @@ class IsegMPOD:
                 )
 
             if abs(ramp_up - ramp_rate_v_per_s) > 5.0:
-                verification_failures.append(
+                ramp_warning_channels.append(ch)
+                warnings.append(
                     f"{ch.upper()}: ramp-rate readback mismatch "
-                    f"(expected {ramp_rate_v_per_s:g} V/s, got {ramp_up:g} V/s)"
+                    f"(commanded {ramp_rate_v_per_s:g} V/s, read back {ramp_up:g} V/s). "
+                    "Proceeding with timed voltage/status monitoring instead of "
+                    "trusting ramp-rate readback."
                 )
 
         if verification_failures:
@@ -487,15 +616,40 @@ class IsegMPOD:
                 f"  - {detail}"
             )
 
+        ramp_failures = []
+        ramp_warning_channel_set = set(ramp_warning_channels)
         for ch in channels:
             self.snmpset_int(f"outputSwitch.{ch}", 1)
+            if ch in ramp_warning_channel_set:
+                ramp_ok, ramp_warnings = self.monitor_channel_ramp(
+                    ch,
+                    expected_voltage_v,
+                    ramp_rate_v_per_s,
+                    polarity=polarity,
+                    neglect_readback_polarity=neglect_readback_polarity,
+                )
+                warnings.extend(ramp_warnings)
+                if not ramp_ok:
+                    ramp_failures.append(
+                        f"{ch.upper()}: empirical ramp rate was outside "
+                        f"{RAMP_RATE_TOLERANCE_FRACTION:.0%} of commanded "
+                        f"{ramp_rate_v_per_s:g} V/s."
+                    )
+
+        if ramp_failures:
+            detail = "\n  - ".join(ramp_failures)
+            raise RampVerificationError(
+                "Empirical ramp-rate verification failed.\n"
+                f"  - {detail}",
+                warnings,
+            )
 
         data = self.read_channel_settings(
             channels,
             polarity=polarity,
             neglect_readback_polarity=neglect_readback_polarity,
         )
-        return data
+        return data, warnings
 
     def clear_events(self, channels: List[str]) -> None:
         for ch in channels:

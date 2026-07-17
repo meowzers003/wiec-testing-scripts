@@ -5,11 +5,13 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, TextIO, Tuple
 
-from iseg_pmod_wrapper import IsegMPOD, SNMPConfig
+from iseg_pmod_wrapper import IsegMPOD, RampVerificationError, SNMPConfig
 
-RESULTS_DIR = Path.cwd() / "iseg_qc_results"
+SPREADSHEET_RESULTS_DIR = Path.cwd() / "HV Modules Test Results"
+TEXT_OUTPUT_ROOT = Path.cwd() / "HV PMOD QC Output Text Files"
+RAMP_WARNING_DIR = Path.cwd() / "HV PMOD QC Ramp Warnings"
 
 CHANNEL_PARAMETERS = [
     ("set_voltage_V", "set voltage [V]"),
@@ -23,7 +25,21 @@ DEFAULT_VOLTAGE_V = 2000.0
 DEFAULT_CURRENT_A = 0.001
 DEFAULT_RAMP_V_PER_S = 100.0
 DEFAULT_IP = "169.254.4.31"
-NEGLECT_READBACK_POLARITY = False
+
+
+class Tee:
+    def __init__(self, *streams: TextIO):
+        self.streams = streams
+
+    def write(self, data: str) -> int:
+        for stream in self.streams:
+            stream.write(data)
+            stream.flush()
+        return len(data)
+
+    def flush(self) -> None:
+        for stream in self.streams:
+            stream.flush()
 
 
 def print_section(title: str, border_char: str = "=") -> None:
@@ -63,49 +79,133 @@ def safe_filename_part(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", value)
 
 
+def setup_terminal_log(test_title: str = "pending_test_title") -> Tuple[TextIO, Path]:
+    now = datetime.now()
+    date_label = now.strftime("%Y-%m-%d")
+    timestamp = now.strftime("%H%M%S")
+    log_dir = TEXT_OUTPUT_ROOT / date_label
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{safe_filename_part(test_title)}_{timestamp}.txt"
+    log_file = log_path.open("w")
+    sys.stdout = Tee(sys.__stdout__, log_file)
+    sys.stderr = Tee(sys.__stderr__, log_file)
+    return log_file, log_path
+
+
+def rename_terminal_log(log_path: Path, test_title: str) -> Path:
+    timestamp = log_path.stem.rsplit("_", 1)[-1]
+    final_path = log_path.with_name(f"{safe_filename_part(test_title)}_{timestamp}.txt")
+    if final_path != log_path:
+        log_path.rename(final_path)
+    print(f"Terminal output log: {final_path}")
+    return final_path
+
+
 def module_csv_path(module_info: Dict[str, str]) -> Path:
     module_name = safe_filename_part(module_info.get("module_name", "iseg").lower())
     serial_number = safe_filename_part(module_info.get("serial_number", "UNKNOWN"))
     firmware_name = safe_filename_part(module_info.get("firmware_name", "UNKNOWN"))
     firmware_number = safe_filename_part(module_info.get("firmware_number", "UNKNOWN"))
     filename = f"{module_name}_{serial_number}_{firmware_name}_{firmware_number}.csv"
-    return RESULTS_DIR / filename
+    return SPREADSHEET_RESULTS_DIR / filename
 
 
-def make_csv_header(channels: List[str]) -> List[str]:
-    header = ["test title", "readback label", "date/time"]
+def module_warning_path(module_info: Dict[str, str], module_channels: List[str]) -> Path:
+    now = datetime.now()
+    timestamp = now.strftime("%Y-%m-%d_%H%M%S")
+    module_name = safe_filename_part(module_info.get("module_name", "iseg").lower())
+    serial_number = safe_filename_part(module_info.get("serial_number", "UNKNOWN"))
+    firmware_name = safe_filename_part(module_info.get("firmware_name", "UNKNOWN"))
+    firmware_number = safe_filename_part(module_info.get("firmware_number", "UNKNOWN"))
+    polarity = safe_filename_part(module_info.get("polarity", "UNKNOWN"))
+    channel_range = safe_filename_part(format_channel_range(module_channels))
+    filename = (
+        f"{module_name}_{serial_number}_{firmware_name}_{firmware_number}_"
+        f"{polarity}_{channel_range}_{timestamp}_warnings.txt"
+    )
+    return RAMP_WARNING_DIR / filename
+
+
+def write_module_warnings(
+    module_info: Dict[str, str],
+    module_channels: List[str],
+    warnings: List[str],
+) -> Optional[Path]:
+    if not warnings:
+        return None
+
+    RAMP_WARNING_DIR.mkdir(parents=True, exist_ok=True)
+    warning_path = module_warning_path(module_info, module_channels)
+    with warning_path.open("w") as warning_file:
+        warning_file.write("HV module ramp warning report\n")
+        warning_file.write(f"date/time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        warning_file.write(f"module name: {module_info.get('module_name', 'UNKNOWN')}\n")
+        warning_file.write(f"firmware name: {module_info.get('firmware_name', 'UNKNOWN')}\n")
+        warning_file.write(f"firmware number: {module_info.get('firmware_number', 'UNKNOWN')}\n")
+        warning_file.write(f"serial number: {module_info.get('serial_number', 'UNKNOWN')}\n")
+        warning_file.write(f"polarity: {module_info.get('polarity', 'UNKNOWN')}\n")
+        warning_file.write(f"channel indices: {format_channel_list(module_channels)}\n\n")
+        for index, warning in enumerate(warnings, start=1):
+            warning_file.write(f"{index}. {warning}\n")
+
+    print(f"\nSaved ramp warning report to {warning_path}")
+    return warning_path
+
+
+def make_readback_columns(channels: List[str]) -> List[str]:
+    columns = []
     for channel_number, _ in enumerate(channels):
         for _, column_label in CHANNEL_PARAMETERS:
-            header.append(f"ch{channel_number} - {column_label}")
-    return header
+            columns.append(f"ch{channel_number} - {column_label}")
+    return columns
 
 
-def append_channel_data_to_csv(
-    test_title: str,
-    readback_label: str,
-    module_info: Dict[str, str],
+def make_csv_headers(channels: List[str]) -> List[List[str]]:
+    readback_columns = make_readback_columns(channels)
+    leading_columns = ["test title", "date/time"]
+    group_header = (
+        leading_columns
+        + ["initial readback"] * len(readback_columns)
+        + ["final readback"] * len(readback_columns)
+    )
+    measurement_header = leading_columns + readback_columns + readback_columns
+    return [group_header, measurement_header]
+
+
+def append_readback_values(
+    row: List[str],
     channels: List[str],
     channel_data: Dict[str, Dict[str, str]],
 ) -> None:
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    header = make_csv_header(channels)
-    row = [test_title, readback_label, timestamp]
-
     for ch in channels:
         values = channel_data.get(ch, {})
         for data_key, _ in CHANNEL_PARAMETERS:
             row.append(values.get(data_key, ""))
+
+
+def append_module_test_result_to_csv(
+    test_title: str,
+    module_info: Dict[str, str],
+    channels: List[str],
+    initial_data: Dict[str, Dict[str, str]],
+    final_data: Dict[str, Dict[str, str]],
+) -> None:
+    SPREADSHEET_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    row = [test_title, timestamp]
+    append_readback_values(row, channels, initial_data)
+    append_readback_values(row, channels, final_data)
 
     csv_path = module_csv_path(module_info)
     write_header = not csv_path.exists() or csv_path.stat().st_size == 0
     with csv_path.open("a", newline="") as csv_file:
         writer = csv.writer(csv_file)
         if write_header:
-            writer.writerow(header)
+            for header in make_csv_headers(channels):
+                writer.writerow(header)
         writer.writerow(row)
 
-    print(f"\nSaved {readback_label} data to {csv_path}")
+    print(f"\nSaved module test result data to {csv_path}")
 
 
 def display_crate_info(crate_info: Dict[str, str]) -> None:
@@ -150,6 +250,19 @@ def prompt_module_polarity(
         print("Please enter positive or negative.")
 
 
+def prompt_module_readback_polarity_handling(
+    module_info: Dict[str, str],
+    module_channels: List[str],
+) -> bool:
+    serial_number = module_info.get("serial_number", "UNKNOWN")
+    channel_range = format_channel_range(module_channels)
+    return prompt_yes_no(
+        "Neglect readback polarity and treat voltage readback magnitudes as "
+        f"the user-defined polarity for ISEG SN {serial_number} ({channel_range})?",
+        default=False,
+    )
+
+
 def prompt_yes_no(prompt: str, default: bool = False) -> bool:
     default_label = "Y/n" if default else "y/N"
     while True:
@@ -169,7 +282,15 @@ def print_functionality_header(
 ) -> None:
     serial_number = module_info.get("serial_number", "UNKNOWN")
     polarity = module_info.get("polarity", "UNKNOWN")
-    title = f"ISEG SN {serial_number} {polarity} {format_channel_range(module_channels)}"
+    readback_mode = (
+        "manual readback polarity"
+        if module_info.get("neglect_readback_polarity", False)
+        else "direct readback polarity"
+    )
+    title = (
+        f"ISEG SN {serial_number} {polarity} "
+        f"{format_channel_range(module_channels)} ({readback_mode})"
+    )
     print_section(title, border_char="-")
 
 
@@ -205,14 +326,16 @@ def run_module_qc(
     module_info: Dict[str, str],
     module_channels: List[str],
     test_title: str,
-    neglect_readback_polarity: bool,
 ) -> Dict[str, Any]:
+    neglect_readback_polarity = module_info.get("neglect_readback_polarity", False)
     result: Dict[str, Any] = {
         "module_id": module_id,
         "serial_number": module_info.get("serial_number", "UNKNOWN"),
         "polarity": module_info.get("polarity", "UNKNOWN"),
+        "neglect_readback_polarity": neglect_readback_polarity,
         "channel_range": format_channel_range(module_channels),
         "failures": [],
+        "warnings": [],
     }
 
     print_functionality_header(module_info, module_channels)
@@ -234,6 +357,9 @@ def run_module_qc(
         print_failure_lines(health_failures)
         record_failure(result, "Communication/channel hardware alarm check failed.")
 
+    initial_data: Dict[str, Dict[str, str]] = {}
+    final_data: Dict[str, Dict[str, str]] = {}
+
     print("\nInitial readback check:")
     initial_readback_ok = False
     try:
@@ -241,13 +367,6 @@ def run_module_qc(
             module_channels,
             polarity=module_info.get("polarity", ""),
             neglect_readback_polarity=neglect_readback_polarity,
-        )
-        append_channel_data_to_csv(
-            test_title,
-            "initial readback",
-            module_info,
-            module_channels,
-            initial_data,
         )
         print("  PASS: initial readback captured.")
         initial_readback_ok = True
@@ -259,7 +378,7 @@ def run_module_qc(
     if health_ok and initial_readback_ok:
         print("\nVoltage/current/ramp setting check:")
         try:
-            configured_data = mpod.configure_and_turn_on(
+            _, ramp_warnings = mpod.configure_and_turn_on(
                 channels=module_channels,
                 voltage_setpoint_v=DEFAULT_VOLTAGE_V,
                 current_limit_a=DEFAULT_CURRENT_A,
@@ -267,14 +386,17 @@ def run_module_qc(
                 polarity=module_info.get("polarity", ""),
                 neglect_readback_polarity=neglect_readback_polarity,
             )
-            append_channel_data_to_csv(
-                test_title,
-                "configured and turned on",
-                module_info,
-                module_channels,
-                configured_data,
-            )
+            result["warnings"].extend(ramp_warnings)
+            if ramp_warnings:
+                print("  PASS with ramp warning(s):")
+                print_failure_lines(ramp_warnings)
             print("  PASS: settings verified and channels turned ON.")
+        except RampVerificationError as e:
+            result["warnings"].extend(e.warnings)
+            message = f"Voltage/current/ramp setting check failed: {e}"
+            print("  FAIL:")
+            print_failure_lines([message])
+            record_failure(result, message)
         except Exception as e:
             message = f"Voltage/current/ramp setting check failed: {e}"
             print("  FAIL:")
@@ -291,18 +413,20 @@ def run_module_qc(
             polarity=module_info.get("polarity", ""),
             neglect_readback_polarity=neglect_readback_polarity,
         )
-        append_channel_data_to_csv(
-            test_title,
-            "final readback",
-            module_info,
-            module_channels,
-            final_data,
-        )
         print("  PASS: final readback captured.")
     except Exception as e:
         message = f"Final readback failed: {e}"
         print(f"  FAIL: {message}")
         record_failure(result, message)
+
+    append_module_test_result_to_csv(
+        test_title,
+        module_info,
+        module_channels,
+        initial_data,
+        final_data,
+    )
+    write_module_warnings(module_info, module_channels, result["warnings"])
 
     return result
 
@@ -313,6 +437,7 @@ def print_final_summary(module_results: List[Dict[str, Any]]) -> None:
 
     for result in module_results:
         failures = result["failures"]
+        warnings = result.get("warnings", [])
         status = "PASS" if not failures else "FAIL"
         if status == "PASS":
             passed += 1
@@ -321,9 +446,18 @@ def print_final_summary(module_results: List[Dict[str, Any]]) -> None:
             f"ISEG SN {result['serial_number']} "
             f"{result['polarity']} {result['channel_range']}"
         )
+        readback_mode = (
+            "manual readback polarity"
+            if result.get("neglect_readback_polarity", False)
+            else "direct readback polarity"
+        )
+        label = f"{label} ({readback_mode})"
         print(f"{status}: {label}")
         if failures:
             print_failure_lines(failures)
+        if warnings:
+            print("  WARNINGS:")
+            print_failure_lines(warnings)
 
     total = len(module_results)
     print(f"\nQC complete: {passed}/{total} module(s) passed.")
@@ -339,8 +473,7 @@ def print_final_summary(module_results: List[Dict[str, Any]]) -> None:
 
 
 def main() -> None:
-    global NEGLECT_READBACK_POLARITY
-
+    log_file: Optional[TextIO] = None
     ip = DEFAULT_IP
     cfg = SNMPConfig(
         ip=ip,
@@ -353,9 +486,12 @@ def main() -> None:
     channels: List[str] = []
 
     try:
+        log_file, log_path = setup_terminal_log()
         test_title = input("Enter test title for CSV logging: ").strip()
         if not test_title:
             test_title = "Untitled ISEG PMOD QC Test"
+        rename_terminal_log(log_path, test_title)
+        print(f"Test title: {test_title}")
 
         initial_snapshot = mpod.read_all()
         crate_info = mpod.get_crate_info(initial_snapshot)
@@ -380,15 +516,15 @@ def main() -> None:
             module_channels_by_id[module_id] = module_channels
             display_module_discovery_info(module_info, module_channels)
             module_info["polarity"] = prompt_module_polarity(module_info, module_channels)
-
-        NEGLECT_READBACK_POLARITY = prompt_yes_no(
-            "Neglect readback polarity and treat voltage readback magnitudes as the user-defined polarity?",
-            default=False,
-        )
-        print(
-            "\nReadback polarity handling: "
-            f"{'neglecting readback sign' if NEGLECT_READBACK_POLARITY else 'using readback sign directly'}."
-        )
+            module_info["neglect_readback_polarity"] = (
+                prompt_module_readback_polarity_handling(module_info, module_channels)
+            )
+            readback_mode = (
+                "manual/user-defined polarity"
+                if module_info["neglect_readback_polarity"]
+                else "direct readback polarity"
+            )
+            print(f"Readback polarity handling for this module: {readback_mode}.")
 
         module_results = []
         for module_id in sorted_module_ids(modules):
@@ -399,7 +535,6 @@ def main() -> None:
                     modules[module_id],
                     module_channels_by_id[module_id],
                     test_title,
-                    NEGLECT_READBACK_POLARITY,
                 )
             )
 
@@ -422,6 +557,12 @@ def main() -> None:
         print(f"\nERROR: {e}")
         print("\nTEST COMPLETE: FAIL (exception)")
         sys.exit(1)
+
+    finally:
+        if log_file is not None:
+            sys.stdout = sys.__stdout__
+            sys.stderr = sys.__stderr__
+            log_file.close()
 
 
 if __name__ == "__main__":
