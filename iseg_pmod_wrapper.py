@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 
+MAX_SNMP_RETRIES = 3
+
+
 @dataclass
 class SNMPConfig:
     ip: str
@@ -16,6 +19,7 @@ class SNMPConfig:
     version: str = "2c"
     timeout_s: int = 30
     log_commands: bool = False
+    max_retries: int = MAX_SNMP_RETRIES
 
 
 class IsegMPOD:
@@ -23,29 +27,48 @@ class IsegMPOD:
         self.cfg = cfg
 
     def _run(self, args: List[str]) -> str:
+        command = " ".join(shlex.quote(arg) for arg in args)
         if self.cfg.log_commands:
-            command = " ".join(shlex.quote(arg) for arg in args)
             print(f"SNMP command: {command}")
 
-        try:
-            result = subprocess.run(
-                args,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=self.cfg.timeout_s,
-                check=True,
-            )
-            return result.stdout.strip()
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(f"SNMP command timed out: {' '.join(shlex.quote(a) for a in args)}")
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(
-                "SNMP command failed:\n"
-                f"Command: {' '.join(shlex.quote(a) for a in args)}\n"
-                f"STDOUT: {e.stdout}\n"
-                f"STDERR: {e.stderr}"
-            )
+        max_retries = max(0, self.cfg.max_retries)
+        max_attempts = max_retries + 1
+        last_error: Optional[RuntimeError] = None
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                result = subprocess.run(
+                    args,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=self.cfg.timeout_s,
+                    check=True,
+                )
+                return result.stdout.strip()
+            except subprocess.TimeoutExpired:
+                last_error = RuntimeError(
+                    "SNMP command timed out:\n"
+                    f"Command: {command}"
+                )
+            except subprocess.CalledProcessError as e:
+                last_error = RuntimeError(
+                    "SNMP command failed:\n"
+                    f"Command: {command}\n"
+                    f"STDOUT: {e.stdout}\n"
+                    f"STDERR: {e.stderr}"
+                )
+
+            if attempt < max_attempts:
+                print(
+                    f"SNMP command attempt {attempt}/{max_attempts} failed; "
+                    f"retrying {command}"
+                )
+
+        raise RuntimeError(
+            f"SNMP command failed after {max_attempts} attempt(s).\n"
+            f"{last_error}"
+        )
 
     def _command_args(self, command: str, community: str) -> List[str]:
         args = [
