@@ -263,6 +263,18 @@ def prompt_module_readback_polarity_handling(
     )
 
 
+def prompt_module_qc_selection(
+    module_info: Dict[str, str],
+    module_channels: List[str],
+) -> bool:
+    serial_number = module_info.get("serial_number", "UNKNOWN")
+    channel_range = format_channel_range(module_channels)
+    return prompt_yes_no(
+        f"Perform QC functionality tests on ISEG SN {serial_number} ({channel_range})?",
+        default=True,
+    )
+
+
 def prompt_yes_no(prompt: str, default: bool = False) -> bool:
     default_label = "Y/n" if default else "y/N"
     while True:
@@ -505,6 +517,7 @@ def main() -> None:
         print(f"\nDiscovered {module_count} ISEG module(s).")
 
         module_channels_by_id: Dict[str, List[str]] = {}
+        selected_module_ids: List[str] = []
         for module_id in sorted_module_ids(modules):
             module_info = modules[module_id]
             module_channels = read_module_channels(
@@ -515,6 +528,12 @@ def main() -> None:
             )
             module_channels_by_id[module_id] = module_channels
             display_module_discovery_info(module_info, module_channels)
+            module_info["perform_qc"] = prompt_module_qc_selection(module_info, module_channels)
+            if not module_info["perform_qc"]:
+                print("Skipping QC functionality tests for this module.")
+                continue
+
+            selected_module_ids.append(module_id)
             module_info["polarity"] = prompt_module_polarity(module_info, module_channels)
             module_info["neglect_readback_polarity"] = (
                 prompt_module_readback_polarity_handling(module_info, module_channels)
@@ -527,7 +546,7 @@ def main() -> None:
             print(f"Readback polarity handling for this module: {readback_mode}.")
 
         module_results = []
-        for module_id in sorted_module_ids(modules):
+        for module_id in selected_module_ids:
             module_results.append(
                 run_module_qc(
                     mpod,
@@ -538,7 +557,15 @@ def main() -> None:
                 )
             )
 
-        print_final_summary(module_results)
+        skipped_count = module_count - len(selected_module_ids)
+        if skipped_count:
+            print(f"\nSkipped QC functionality tests for {skipped_count} module(s).")
+
+        if module_results:
+            print_final_summary(module_results)
+        else:
+            print("\nNo modules were selected for QC functionality tests.")
+            print("\nTEST COMPLETE: NO MODULES TESTED")
 
     except KeyboardInterrupt:
         print("\nKeyboardInterrupt detected. Turning off all discovered channels if possible.")
