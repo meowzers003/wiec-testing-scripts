@@ -332,6 +332,21 @@ def read_module_channels(
     return []
 
 
+def channels_for_modules(
+    module_ids: List[str],
+    module_channels_by_id: Dict[str, List[str]],
+) -> List[str]:
+    channels = []
+    seen_channels = set()
+    for module_id in module_ids:
+        for channel in module_channels_by_id.get(module_id, []):
+            if channel in seen_channels:
+                continue
+            seen_channels.add(channel)
+            channels.append(channel)
+    return channels
+
+
 def run_module_qc(
     mpod: IsegMPOD,
     module_id: str,
@@ -560,6 +575,17 @@ def main() -> None:
         skipped_count = module_count - len(selected_module_ids)
         if skipped_count:
             print(f"\nSkipped QC functionality tests for {skipped_count} module(s).")
+
+        selected_channels = channels_for_modules(selected_module_ids, module_channels_by_id)
+        if selected_channels:
+            print_section("Turning off selected QC channels")
+            try:
+                mpod.turn_off_all(selected_channels, emergency=False)
+                print(f"Turned off {len(selected_channels)} selected QC channel(s).")
+            except Exception as e:
+                print(f"FAIL: Could not turn off selected QC channels: {e}")
+        else:
+            print("\nNo selected QC channels to turn off.")
 
         if module_results:
             print_final_summary(module_results)
