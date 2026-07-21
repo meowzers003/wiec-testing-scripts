@@ -179,6 +179,34 @@ def cts_ssh_FEMB(wib_ip,root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
     logs = {}  # from collections import defaultdict report_log01 = defaultdict(dict)
 
     # ============= Common Utility Functions =============
+    def _ensure_writable_root(requested_root):
+        """Use requested_root when possible, otherwise redirect to a local QC output folder."""
+        requested_root = os.path.join(os.path.abspath(requested_root), "")
+        candidate_roots = [
+            requested_root,
+            os.path.join(BASE_DIR, "FEMB_QC_Bypass", "FEMB_QC"),
+            os.path.join("/tmp", "FEMB_QC_Bypass", "FEMB_QC"),
+        ]
+
+        for candidate_root in candidate_roots:
+            normalized_root = os.path.join(os.path.abspath(candidate_root), "")
+            try:
+                os.makedirs(normalized_root, exist_ok=True)
+                if normalized_root != requested_root:
+                    print(
+                        Fore.YELLOW
+                        + f"Could not use QC data root {requested_root}; "
+                        + f"saving FEMB QC files to {normalized_root}"
+                        + Style.RESET_ALL
+                    )
+                return normalized_root
+            except OSError as e:
+                print(f"Error creating folder {normalized_root}: {e}")
+
+        raise OSError("No writable FEMB QC output directory found.")
+
+    root = _ensure_writable_root(root)
+
     def power_off_femb_channels():
         """Power off FEMB channels (normal operation)"""
         print('Powering off FEMB channels...')
