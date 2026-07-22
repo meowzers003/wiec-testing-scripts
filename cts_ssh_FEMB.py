@@ -172,6 +172,7 @@ def read_csv_to_dict(filename, env, p=False):
     return data
 
 
+
 def cts_ssh_FEMB(wib_ip,root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
     # QC_TST_EN = True
     global WIB_IP
@@ -492,7 +493,7 @@ def cts_ssh_FEMB(wib_ip,root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
                 "ssh", "root@" + WIB_IP,
                 f"cd BNL_CE_WIB_SW_QC; python3 top_femb_powering_LN.py {power_en}"
             ]
-            ln_result = subrun(ln_command, timeout=60, out=True)  # Display output
+            ln_result = subrun(ln_command, timeout=120, out=True)  # Display output
             time.sleep(2)
             print("FEMB Cold Power On")
             ln_result = ln_result.stdout
@@ -506,11 +507,10 @@ def cts_ssh_FEMB(wib_ip,root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
         ]
         result = subrun(
             command,
-            timeout=60,
+            timeout=120,
             out=True,
             timeout_success_keywords=["Done"],
         )  # Display output
-
         # Extract stdout for checking
         if hasattr(result, 'stdout'):
             slot_check = result.stdout
@@ -571,7 +571,7 @@ def cts_ssh_FEMB(wib_ip,root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
                 '0': ('SLOT0', 'slot0'),
                 '1': ('SLOT1', 'slot1'),
                 '2': ('SLOT2', 'slot2'),
-                '3': ('SLOT3', 'slot3')
+                '3': ('SLOT3', 'slot3') 
             }
 
             attempt = 0
@@ -676,7 +676,7 @@ def cts_ssh_FEMB(wib_ip,root="D:/FEMB_QC/", QC_TST_EN=0, input_info=None):
         WIB_CHK_DIR = "/home/root/BNL_CE_WIB_SW_QC/CHK/"
         WIB_REPORT_DIR = "/home/root/BNL_CE_WIB_SW_QC/CHK/Report/"
         WIB_LNP_DIR = "/home/root/BNL_CE_WIB_SW_QC/tmp_ln/"
-        CHECKOUT_TIMEOUT = 200
+        CHECKOUT_TIMEOUT = 300
         SCP_TIMEOUT = 10
         MAX_RETRIES = 3
         VALID_SLOTS = ['0', '1', '2', '3']

@@ -1,17 +1,19 @@
 {
-"schema": 1,
-"tester_name": "Test User",
-"tester_email": "test.user@example.com",
-"femb_ids": ["FEMB_001", "FEMB_002", "FEMB_003", "FEMB_004"],
-
-"dune_hv_crate_test": "True",
-"wib_setup": "True",
-"ptc_setup": "True",
-"wiec_setup": "True",
-"femb_checkout": "True",
-
-"continuity_tests": "True",
-
-"errors": "[]"
-
+    "schema": 1,
+    "tester_name": "Test User",
+    "tester_email": "test.user@example.com",
+    "femb_ids": [
+        "FEMB_001",
+        "FEMB_002",
+        "FEMB_003",
+        "FEMB_004"
+    ],
+    "dune_hv_crate_test": "True",
+    "wib_setup": "True",
+    "ptc_setup": "True",
+    "wiec_setup": "True",
+    "femb_checkout": "True",
+    "continuity_tests": "True",
+    "errors": "[]",
+    "full_wiec_test_sequence": "True"
 }

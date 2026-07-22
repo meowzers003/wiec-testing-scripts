@@ -7,7 +7,7 @@
 "rounding_factor": 5,
 
 
-"PL506_IP_ADDR": "###.###.##.##",
+"PL506_IP_ADDR": "169.254.12.2",
 "PL506_settle_seconds": 5.0,
 "PL506_voltage_max": 50.0,
 "PL506_sense_voltage": 48.0,
@@ -22,9 +22,9 @@
 
 "hv_stability_wait": 5.0,
 "hv_termination_wait": 5.0,
-"hv_minutes_duration_long": 1,
+"hv_minutes_duration_long": 10 ,
 "hv_minutes_duration_short": 1,
-"hv_seconds_interval": 1,
+"hv_seconds_interval": 20,
 "heat_wait": 10.0,
 "fan_wait": 10.0,
 
@@ -81,7 +81,7 @@
 "rc_filter_termination_ohm": 10000,
 "rc_filter_termination_tolerance_percent": 5.0,
 
-"rc_filter_open_model_voltage": 50,
+"rc_filter_open_model_voltage": 2300,
 "rc_filter_term_model_voltage": 20,
 "rc_filter_summary_signal_keys": ["voltage", "current"],
 
@@ -96,7 +96,7 @@
 "caenR8033DM_ramp_down": 100.0,
 "caenR8033DM_ramp_up": 100.0,
 "caenR8033DM_trip_time": 10.0,
-"caenR8033DM_open_voltage": 50,
+"caenR8033DM_open_voltage": 2300,
 "caenR8033DM_term_voltage": 20,
 
 "keysight970a": "TCPIP::169.254.9.69::INSTR",

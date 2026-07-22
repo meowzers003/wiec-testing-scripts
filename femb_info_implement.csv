@@ -1,4 +1,4 @@
-﻿tester,lke
+tester,lke
 SLOT0,BNL_FEMB_IO-1865-1J_00094
 SLOT1,BNL_FEMB_I0-1865-1K_00016
 SLOT2,
@@ -6,11 +6,11 @@ SLOT3,
 test_site,BNL
 toy_TPC,y
 comment,QC test
-top_path,/home/dune/
+top_path,/home/dune-daq/DUNE-HV-Crate-Testing
 Tech_site_email,lke@bnl.gov
 Test_Site,BNL
 Tech_Coordinator,LKE
-QC_data_root_folder,/mnt/data
+QC_data_root_folder,/home/dune-daq/DUNE-HV-Crate-Testing/FEMB_chk
 Rigol_PS_for_WIB,True
 Rigol_PS_ID,USB0::0x1AB1::0x0E11::DP8C184550857::INSTR
 CTS_LN2_AM,1800

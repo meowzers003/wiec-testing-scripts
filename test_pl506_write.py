@@ -1,22 +1,21 @@
 from pl506 import PL506
 
-psu = PL506(ip="192.168.91.80")
+psu = PL506(ip="169.254.12.2")
 
-channel = 0
+channels = [0]
+#1,2,3,4,5
+print("Turning on and off all channels with 48.0 V and 8 A current limit...")
 
-print("Turning on channel with 1.0 V and 0.1 A current limit...")
-rb = psu.safe_turn_on_channel(
-    channel=channel,
-    voltage_v=1.0,
-    current_limit_a=0.1,
-    max_voltage_v=50.0,
-    max_current_a=12.5,
-    settle_s=1.0,
-)
+for channel in channels:
+   rb = psu.safe_turn_on_channel(
+      channel=channel,
+      voltage_v=48.0,
+      current_limit_a=8.0,
+      max_voltage_v=50.0,
+      max_current_a=8.0,
+      settle_s=5.0,)
+   print(rb)
 
-print(rb)
-
-input("Press Enter to turn channel off...")
-
-psu.channel_off(channel)
-print("Channel off.")
+   #input("Press Enter to turn channel off...")
+   #psu.channel_off(channel)
+   #print(f"Channel U{channel} off.")

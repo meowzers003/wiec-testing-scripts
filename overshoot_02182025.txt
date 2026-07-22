@@ -1,0 +1,22 @@
+DUNE HV Crate Tester --> Turning Channel 7 HV from 0 to 2000V with open termination
+DUNE HV Crate Tester --> Turning Channel 6 HV from 0 to 2000V with open termination
+DUNE HV Crate Tester --> Turning Channel 5 HV from 0 to 2000V with open termination
+DUNE HV Crate Tester --> Turning Channel 4 HV from 0 to 2000V with open termination
+DUNE HV Crate Tester --> Turning Channel 3 HV from 0 to 2000V with open termination
+DUNE HV Crate Tester --> Turning Channel 2 HV from 0 to 2000V with open termination
+DUNE HV Crate Tester --> Turning Channel 1 HV from 0 to 2000V with open termination
+DUNE HV Crate Tester --> Turning Channel 0 HV from 0 to 2000V with open termination
+CAEN R8033DM Wrapper --> Channel 7 is ramping up to 2000.0, currently at 1.8200000524520874
+CAEN R8033DM Wrapper --> Channel 7 is ramping up to 2000.0, currently at 10.34000015258789
+CAEN R8033DM Wrapper --> Channel 7 is ramping up to 2000.0, currently at 49.02000045776367
+CAEN R8033DM Wrapper --> Channel 7 is ramping up to 2000.0, currently at 72.69999694824219
+CAEN R8033DM Wrapper --> Channel 7 is ramping up to 2000.0, currently at 99.08999633789062
+CAEN R8033DM Wrapper --> Channel 7 is ramping up to 2000.0, currently at 150.49000549316406
+CAEN R8033DM Wrapper --> Error code 0xb
+Detected exception, powering off all devices first.
+CAEN R8033DM Wrapper --> Error code 0xb
+Detected exception, powering off all devices first.
+CAEN R8033DM Wrapper --> Error code 0xb
+CAEN R8033DM Wrapper --> Channel 7 is overcurrent
+CAEN R8033DM --> Disconnected
+(venv) dune-daq@dunedaq-System
