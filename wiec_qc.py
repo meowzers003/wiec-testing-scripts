@@ -5,6 +5,8 @@ import os
 import sys
 import importlib
 
+import wiec_output_log
+
 
 RESULTS_FILE = "results.json"
 
@@ -87,6 +89,11 @@ def shutdown_all():
 
 
 def main():
+    output_log_name = input("Enter WIEC QC test name for output log: ").strip()
+    if not output_log_name:
+        output_log_name = "wiec_qc_test"
+    wiec_output_log.start_output_log(output_log_name)
+
     test_sequence = [
         {
             "name": "dune_hv_crate_test.py",
@@ -143,6 +150,7 @@ def main():
 
     finally:
         shutdown_all()
+        wiec_output_log.stop_output_log()
 
 
 if __name__ == "__main__":
