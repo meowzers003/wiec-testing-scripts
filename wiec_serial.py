@@ -5,6 +5,8 @@ import time
 import glob
 import re
 
+import wiec_output_log
+
 
 try:
     import serial
@@ -27,6 +29,19 @@ ANSI_ESCAPE_RE = re.compile(
     r"|\x1b\][^\x07]*(?:\x07|\x1b\\)"
     r"|\x1b[@-Z\\-_]"
 )
+
+
+def serial_log(message=""):
+    if wiec_output_log.is_active():
+        wiec_output_log.log(f"[serial] {message}")
+    else:
+        print(message)
+
+
+def serial_error(message=""):
+    print(message)
+    if wiec_output_log.is_active():
+        wiec_output_log.log(f"[serial] {message}")
 
 
 def sanitize_terminal_text(text):
@@ -54,12 +69,12 @@ def store_current_usb_ports(available_ports=None):
 
     KNOWN_USB_PORTS = set(available_ports)
     USB_PORT_SCAN_STORED = True
-    print("Stored current USB serial ports:")
+    serial_log("Stored current USB serial ports:")
     if KNOWN_USB_PORTS:
         for port in sorted(KNOWN_USB_PORTS):
-            print(f"  {port}")
+            serial_log(f"  {port}")
     else:
-        print("  None")
+        serial_log("  None")
 
     return KNOWN_USB_PORTS.copy()
 
@@ -84,59 +99,59 @@ def check_host_serial_device(timeout=100, poll_interval=1):
             if new_ports:
                 DEVICE = new_ports[0]
                 if len(new_ports) > 1:
-                    print("Multiple new USB serial ports were found:")
+                    serial_log("Multiple new USB serial ports were found:")
                     for port in new_ports:
-                        print(f"  {port}")
-                    print(f"Using first new port as Zynq serial device: {DEVICE}")
+                        serial_log(f"  {port}")
+                    serial_log(f"Using first new port as Zynq serial device: {DEVICE}")
                 else:
-                    print(f"Found new Zynq serial device: {DEVICE}")
+                    serial_log(f"Found new Zynq serial device: {DEVICE}")
                 return None
 
             time.sleep(poll_interval)
 
-        print("Zynq serial device was not found as a new USB port.")
-        print("Previously known USB serial ports:")
+        serial_error("Zynq serial device was not found as a new USB port.")
+        serial_log("Previously known USB serial ports:")
         if KNOWN_USB_PORTS:
             for port in sorted(KNOWN_USB_PORTS):
-                print(f"  {port}")
+                serial_log(f"  {port}")
         else:
-            print("  None")
+            serial_log("  None")
 
-        print("Detected serial-like ports:")
+        serial_log("Detected serial-like ports:")
         if available_ports:
             for port in available_ports:
-                print(f"  {port}")
+                serial_log(f"  {port}")
         else:
-            print("  None")
+            serial_log("  None")
 
-        print("\nCheck that the Zynq board USB cable is connected and that PTC power is on.")
+        serial_error("\nCheck that the Zynq board USB cable is connected and that PTC power is on.")
         sys.exit(1)
 
     available_ports = scan_host_usb_serial_ports()
-    print("No stored pre-power USB scan was found. Falling back to legacy device names.")
-    print("Detected serial-like ports:")
+    serial_log("No stored pre-power USB scan was found. Falling back to legacy device names.")
+    serial_log("Detected serial-like ports:")
     if available_ports:
         for port in available_ports:
-            print(f"  {port}")
+            serial_log(f"  {port}")
     else:
-        print("  None")
+        serial_log("  None")
 
     for dev in DEVICES:
         if dev not in available_ports:
-            print("Zynq serial device was not found.")
-            print("Detected serial-like ports:")
+            serial_log("Zynq serial device was not found.")
+            serial_log("Detected serial-like ports:")
             if available_ports:
                 for port in available_ports:
-                    print(f"  {port}")
+                    serial_log(f"  {port}")
             else:
-                print("  None")
+                serial_log("  None")
         else:
-            print(f"Found Zynq serial device: {dev}")
+            serial_log(f"Found Zynq serial device: {dev}")
             DEVICE = dev
             return None
 
-    print(f"\nExpected: {DEVICES}")
-    print("Check that the Zynq board USB cable is connected.")
+    serial_error(f"\nExpected: {DEVICES}")
+    serial_error("Check that the Zynq board USB cable is connected.")
     sys.exit(1)
 
     #print(f"Found Zynq serial device: {DEVICE}")
@@ -149,7 +164,7 @@ def read_until_any(ser, keywords, timeout=40):
     """
     # FIX: Removed ser.reset_input_buffer() from here to prevent erasing valid text.
 
-    print("Waiting for PetaLinux login prompt...")
+    serial_log("Waiting for PetaLinux login prompt...")
 
     start_time = time.time()
     buffer = ""
@@ -188,7 +203,7 @@ def send_line(ser, line):
 
 
 def login_petalinux():
-    print(f"Opening serial console: {DEVICE} @ {BAUDRATE}")
+    serial_log(f"Opening serial console: {DEVICE} @ {BAUDRATE}")
 
     try:
         ser = serial.Serial(
@@ -198,14 +213,14 @@ def login_petalinux():
             write_timeout=1
         )
     except PermissionError:
-        print(f"Permission denied opening {DEVICE}.")
+        serial_error(f"Permission denied opening {DEVICE}.")
         sys.exit(1)
 
     time.sleep(1)
     ser.reset_input_buffer()
 
     # FIX 1: Do NOT spam enter right away. Let's check where the board is first.
-    print("Checking initial terminal state...")
+    serial_log("Checking initial terminal state...")
     ser.write(b"\r\n")
     ser.flush()
     time.sleep(0.5)
@@ -218,19 +233,19 @@ def login_petalinux():
     )
 
     if matched is None:
-        print("Did not see login prompt, shell prompt, or bootloader.")
-        print("Last serial output was:")
-        print(output)
+        serial_error("Did not see login prompt, shell prompt, or bootloader.")
+        serial_log("Last serial output was:")
+        serial_log(output)
         ser.close()
         sys.exit(1)
 
     # FIX 3: If stuck in U-Boot, force it to boot into PetaLinux
     if matched == "ZynqMP>":
-        print("Detected U-Boot prompt. Forcing PetaLinux boot sequence...")
+        serial_log("Detected U-Boot prompt. Forcing PetaLinux boot sequence...")
         send_line(ser, "boot")
         
         # Wait longer because booting Linux takes time
-        print("Waiting for PetaLinux to finish booting...")
+        serial_log("Waiting for PetaLinux to finish booting...")
         output, matched = read_until_any(
             ser,
             keywords=["login:", "password:", "#", "$"],
@@ -238,19 +253,19 @@ def login_petalinux():
         )
         
         if matched is None:
-            print("PetaLinux failed to boot after forcing 'boot'.")
-            print(output)
+            serial_error("PetaLinux failed to boot after forcing 'boot'.")
+            serial_log(output)
             ser.close()
             sys.exit(1)
 
     # Already logged in
     if matched in ["#", "$"]:
-        print("Already at shell prompt.")
+        serial_log("Already at shell prompt.")
         return ser
 
     # Username prompt
     if matched.lower() == "login:":
-        print("Sending username...")
+        serial_log("Sending username...")
         send_line(ser, USERNAME)
         #output, matched = read_until_any(ser, keywords=["password:", "#", "$"], timeout=10)
 
@@ -261,11 +276,11 @@ def login_petalinux():
    #     output, matched = read_until_any(ser, keywords=["#", "$", "login incorrect"], timeout=10)
 
     if matched is None or "login incorrect" in output.lower():
-        print("Login failed.")
+        serial_error("Login failed.")
         ser.close()
         sys.exit(1)
 
-    print("Logged into PetaLinux.")
+    serial_log("Logged into PetaLinux.")
     return ser
 
 
@@ -301,7 +316,7 @@ def run_ecat_soft_timeout_then_i2cdetect(
     if ser.in_waiting:
         ser.read(ser.in_waiting)
 
-    print(f"Running {command} for {soft_timeout} seconds...")
+    serial_log(f"Running {command} for {soft_timeout} seconds...")
     send_line(ser, command)
 
     start_time = time.time()
@@ -319,13 +334,13 @@ def run_ecat_soft_timeout_then_i2cdetect(
         raw = ser.read(ser.in_waiting)
         stopped_output = sanitize_terminal_text(raw.decode(errors="ignore"))
         if stopped_output.strip():
-            print(stopped_output)
+            serial_log(stopped_output)
 
-    print(f"Waiting {settle_time} seconds before I2C scan...")
+    serial_log(f"Waiting {settle_time} seconds before I2C scan...")
     time.sleep(settle_time)
 
     detect_output = run_petalinux_command(ser, "i2cdetect -y -r 2", timeout=15)
-    print(detect_output)
+    serial_log(detect_output)
     return detect_output
 
 
@@ -333,7 +348,6 @@ def run_ecat_soft_timeout_then_i2cdetect(
 # function to collect output resposnse 
 def login(): # func to just login
     check_host_serial_device()
-    time.sleep(100)  # wait for the Zynq to boot up and be ready for commands
     ser = login_petalinux()
     set_date(ser)
     return ser
@@ -343,7 +357,7 @@ def set_timing(ser):
     Sets the timing parameter on the PetaLinux shell.
     """
     output = run_petalinux_command(ser, "python setup_timing.py")
-    print(output)
+    serial_log(output)
 
 
 
@@ -352,13 +366,13 @@ def power_wib(ser, wibs):
     Powers on or off the specified WIB.
     """
     outputs = {}
-    print(f"\nSetting power for WIBs as follows {wibs}...")
+    serial_log(f"\nSetting power for WIBs as follows {wibs}...")
     for wib, power_state in wibs.items():
         command = f"python3 power_on_wib.py {wib} {power_state}"
         output = run_petalinux_command(ser, command)
-        print(output)
+        serial_log(output)
         outputs[wib] = output
-    print(output)
+    serial_log(output)
     # user prompted wait 
     # userinput = "no"
     # while userinput != "go":
@@ -371,9 +385,9 @@ def power_wib(ser, wibs):
 def sensors_addr(ser, wibs):
     sensor_outputs = {}
     for wib, power_state in wibs.items():
-        print(f"Getting sensor output for WIB {wib}...")
+        serial_log(f"Getting sensor output for WIB {wib}...")
         switch_output = run_petalinux_command(ser, f"i2cset -y 2 0x7{wib} 0x0002")
-        print(switch_output)
+        serial_log(switch_output)
         # # user prompted wait 
         # userinput = "no"
         # while userinput != "go":
@@ -382,7 +396,7 @@ def sensors_addr(ser, wibs):
     	           
     	           
         detect_output = run_petalinux_command(ser, f"i2cdetect -y -r 2")       
-        print(detect_output)
+        serial_log(detect_output)
         # userinput = "no"
         # while userinput != "go":
         #     userinput = input("continue?") 
@@ -398,7 +412,7 @@ def sensors_addr(ser, wibs):
     
 def close_serial(ser):
     ser.close()
-    print("\nSerial connection closed.")
+    serial_log("\nSerial connection closed.")
 
 #### just to get current time and date in ubuntu format --------------------
 import time
@@ -416,23 +430,23 @@ def set_date(ser):
     """
     set_timing(ser)
     date_str = get_system_ubuntu_date()
-    print(f"Setting date to {date_str}...")
+    serial_log(f"Setting date to {date_str}...")
     output = run_petalinux_command(ser, f"sudo date -s '{date_str}'")
     output += run_petalinux_command(ser, "date")
-    print(f"\n Set date output: {output}")
+    serial_log(f"\n Set date output: {output}")
 
 def main():
     check_host_serial_device()
 
     ser = login_petalinux()
 
-    print("\nRunning test command on PetaLinux...")
+    serial_log("\nRunning test command on PetaLinux...")
     output = run_petalinux_command(ser, "uname -a")
-    print(output)
+    serial_log(output)
 
-    print("\nListing PetaLinux tty devices...")
+    serial_log("\nListing PetaLinux tty devices...")
     output = run_petalinux_command(ser, "ls /dev/tty*")
-    print(output)
+    serial_log(output)
 
     close_serial(ser)
 

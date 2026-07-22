@@ -23,7 +23,7 @@ from qc_results import analyze_test_results, display_qc_results
 # Image paths for instruction popups
 IMG_DIR = os.path.join(QC_PACKAGE_DIR, 'GUI', 'output_pngs')
 
-init()
+init(strip=False)
 
 # Email configuration
 SENDER_EMAIL = "bnlr216@gmail.com"

@@ -9,7 +9,7 @@ import time
 import colorama
 from colorama import Fore, Style
 
-colorama.init()
+colorama.init(strip=False)
 
 
 class QCResult:

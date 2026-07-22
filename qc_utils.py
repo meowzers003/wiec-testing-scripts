@@ -12,7 +12,7 @@ from colorama import Fore, Style
 import cts_ssh_FEMB as cts
 import GUI.send_email as send_email
 
-colorama.init()
+colorama.init(strip=False)
 
 
 def timer_thread(stop_event):

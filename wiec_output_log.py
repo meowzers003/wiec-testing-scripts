@@ -34,6 +34,9 @@ class Tee:
         self.terminal_stream.flush()
         self.log_stream.flush()
 
+    def isatty(self) -> bool:
+        return self.terminal_stream.isatty()
+
 
 class LogOnly:
     def __init__(self, log_stream: TextIO):
@@ -78,6 +81,10 @@ def stop_output_log() -> None:
 
     _log_file.close()
     _log_file = None
+
+
+def is_active() -> bool:
+    return _log_file is not None
 
 
 def log(message: str = "") -> None:
