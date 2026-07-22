@@ -109,32 +109,10 @@ def build_test_name(version_number: str, tester_name: str, comments: str) -> str
     return f"{version_number}_{tester_name}_{comments}"
 
 
-def confirm_before_run(config_file: str, test_name: str) -> bool:
-    """
-    Shows summary and asks user to confirm before starting hardware test.
-    """
-
-    print("\n" + "=" * 70)
-    print("DUNE HV CRATE TEST RUN SUMMARY")
-    print("=" * 70)
-    print(f"Config file : {config_file}")
-    print(f"Test name   : {test_name}")
-    print("=" * 70)
-
-    while True:
-        answer = input("Start test now? [y/n]: ").strip().lower()
-
-        if answer in ("y", "yes"):
-            return True
-
-        if answer in ("n", "no"):
-            return False
-
-        print("Please enter y or n.")
-
-
 active_test = None
 wibs = {}
+configured_config_file = None
+configured_test_name = None
 VALID_WIB_POWER_STATES = {"on", "off"}
 
 
@@ -172,12 +150,27 @@ def prompt_wib_power_states():
 
         selected_wibs[wib_number] = state
 
-        more = input("Do you want to power on/off more WIBs? (y/n): ").strip().lower()
-        if more not in ("y", "yes"):
-            break
+        while True:
+            more = input("Do you want to power on/off more WIBs? (y/n): ").strip().lower()
+            if more in ("y", "yes"):
+                break
+            if more in ("n", "no"):
+                wibs = selected_wibs
+                return wibs
+            print("ERROR: Please enter y or n.")
 
     wibs = selected_wibs
     return wibs
+
+
+def set_test_context(config_file: str, test_name: str, wib_power_states=None):
+    global configured_config_file, configured_test_name, wibs
+
+    configured_config_file = config_file
+    configured_test_name = test_name
+    if wib_power_states is not None:
+        wibs = dict(wib_power_states)
+
 
 def run_dune_hv_crate_test(config_file: str, test_name: str):
     global active_test
@@ -215,34 +208,35 @@ def shutdown_dune_hv_crate_test():
 
 
 def main():
+    if configured_config_file and configured_test_name:
+        config_file = configured_config_file
+        test_name = configured_test_name
+    else:
+        print("\n" + "=" * 70)
+        print("DUNE HV CRATE TEST TERMINAL GUI")
+        print("=" * 70)
+
+        prompt_wib_power_states()
+
+        version_number = prompt_required("Enter version number: ")
+        tester_name = prompt_required("Enter name of tester: ")
+        comments = prompt_required("Enter extra comments from test user: ")
+        config_file = prompt_config_file()
+
+        test_name = build_test_name(
+            version_number=version_number,
+            tester_name=tester_name,
+            comments=comments
+        )
+
     print("\n" + "=" * 70)
-    print("DUNE HV CRATE TEST TERMINAL GUI")
+    print("DUNE HV CRATE TEST RUN SUMMARY")
+    print("=" * 70)
+    print(f"Config file : {config_file}")
+    print(f"Test name   : {test_name}")
     print("=" * 70)
 
-    prompt_wib_power_states()
-
-    version_number = prompt_required("Enter version number: ")
-    tester_name = prompt_required("Enter name of tester: ")
-    comments = prompt_required("Enter extra comments from test user: ")
-    config_file = prompt_config_file()
-
-    test_name = build_test_name(
-        version_number=version_number,
-        tester_name=tester_name,
-        comments=comments
-    )
-
-    should_run = confirm_before_run(
-        config_file=config_file,
-        test_name=test_name
-    )
-
     test_result = True
-
-    if not should_run:
-        print("Test cancelled by user.")
-        # sys.exit(0)
-        return False 
         
     # not running until FEMB is debugged (for the sake of time)
     #try:

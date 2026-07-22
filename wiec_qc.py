@@ -5,6 +5,7 @@ import os
 import sys
 import importlib
 
+import wiec_crate_gui
 import wiec_output_log
 
 
@@ -86,21 +87,88 @@ def shutdown_all():
         print(traceback.format_exc())
     
 
+def print_prompt_section(title):
+    print("\n" + "-" * 15 + f" {title} " + "-" * 15)
 
 
-def main():
-    output_log_name = input("Enter WIEC QC test name for output log: ").strip()
-    if not output_log_name:
-        output_log_name = "wiec_qc_test"
-    wiec_output_log.start_output_log(output_log_name)
+def prompt_run_mode():
+    valid_modes = {"c": "crate", "w": "wib_femb", "b": "both"}
+    while True:
+        response = input(
+            "Are you testing HV crate only [C], WIB-FEMB only [W], or Both [B]: "
+        ).strip().lower()
+        if response in valid_modes:
+            return valid_modes[response]
+        print("ERROR: Please enter C, W, or B.")
 
-    test_sequence = [
-        {
-            "name": "dune_hv_crate_test.py",
-            "key": "dune_hv_crate_test",
-            "module": "wiec_crate_gui",
-            "function": "main",
-        },
+
+def prompt_wib_power_states():
+    selected_wibs = {}
+
+    while True:
+        while True:
+            try:
+                wib_number = wiec_crate_gui.normalize_wib_number(
+                    input("Enter the WIB number you want to power on/off: ")
+                )
+                break
+            except ValueError as exc:
+                print(f"ERROR: {exc}")
+
+        while True:
+            try:
+                state = wiec_crate_gui.normalize_wib_power_state(
+                    input(f"Enter the power state (on/off) for WIB {wib_number}: ")
+                )
+                break
+            except ValueError as exc:
+                print(f"ERROR: {exc}")
+
+        selected_wibs[wib_number] = state
+
+        while True:
+            more = input("Do you want to power on/off more WIBs? (y/n): ").strip().lower()
+            if more in ("y", "yes"):
+                break
+            if more in ("n", "no"):
+                return selected_wibs
+            print("ERROR: Please enter y or n.")
+
+
+def prompt_wiec_test_info():
+    print_prompt_section("WIEC QC : Test Info")
+    version_number = wiec_crate_gui.prompt_required("Enter version number: ")
+    tester_name = wiec_crate_gui.prompt_required("Enter name of tester: ")
+    comments = wiec_crate_gui.prompt_required("Enter extra comments from test user: ")
+    config_file = wiec_crate_gui.prompt_config_file()
+    run_mode = prompt_run_mode()
+    test_name = wiec_crate_gui.build_test_name(
+        version_number=version_number,
+        tester_name=tester_name,
+        comments=comments,
+    )
+
+    wibs = {}
+    if run_mode in ("wib_femb", "both"):
+        print_prompt_section("WIB Under Test")
+        wibs = prompt_wib_power_states()
+
+    return {
+        "config_file": config_file,
+        "run_mode": run_mode,
+        "test_name": test_name,
+        "wibs": wibs,
+    }
+
+
+def steps_for_mode(run_mode):
+    hv_crate_step = {
+        "name": "dune_hv_crate_test.py",
+        "key": "dune_hv_crate_test",
+        "module": "wiec_crate_gui",
+        "function": "main",
+    }
+    wib_femb_steps = [
         {
             "name": "wiec_ptc_power.py",
             "key": "ptc_setup",
@@ -119,13 +187,29 @@ def main():
            "module": "wiec_femb_checkout",
            "function": "main",
         },
-
-        # {
-        #     "name": "continuity_tests.py",
-        #     "key": "continuity_tests",
-        #     "function": WIEC_CONTINUITY_TESTS.run_continuity_tests,
-        # },
     ]
+
+    if run_mode == "crate":
+        return [hv_crate_step]
+    if run_mode == "wib_femb":
+        return wib_femb_steps
+    return [hv_crate_step] + wib_femb_steps
+
+
+
+def main():
+    test_info = prompt_wiec_test_info()
+    wiec_crate_gui.set_test_context(
+        config_file=test_info["config_file"],
+        test_name=test_info["test_name"],
+        wib_power_states=test_info["wibs"],
+    )
+    wiec_output_log.start_output_log(test_info["test_name"])
+    print(f"Selected test mode: {test_info['run_mode']}")
+    print(f"Selected config file: {test_info['config_file']}")
+    if test_info["wibs"]:
+        print(f"Selected WIB power states: {test_info['wibs']}")
+    test_sequence = steps_for_mode(test_info["run_mode"])
 
     try:
         for step in test_sequence:
