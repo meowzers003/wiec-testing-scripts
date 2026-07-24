@@ -238,19 +238,19 @@ def main():
 
     test_result = True
         
-    # not running until FEMB is debugged (for the sake of time)
-    #try:
-    #    test_result = run_dune_hv_crate_test(config_file, test_name)
-    #except KeyboardInterrupt:
-    #    print("\nTest interrupted by user with Ctrl+C.")
-    #    print("The main test class should handle emergency shutoff if interruption occurs inside its try/except.")
-    #    test_result = False
-    #except Exception as exc:
-    #    print("\nERROR: Test failed or raised an exception.")
-    #    print(f"Exception: {exc}")
-    #    test_result = False
+    #not running until FEMB is debugged (for the sake of time)
+    try:
+       test_result = run_dune_hv_crate_test(config_file, test_name)
+    except KeyboardInterrupt:
+       print("\nTest interrupted by user with Ctrl+C.")
+       print("The main test class should handle emergency shutoff if interruption occurs inside its try/except.")
+       test_result = False
+    except Exception as exc:
+       print("\nERROR: Test failed or raised an exception.")
+       print(f"Exception: {exc}")
+       test_result = False
 
-    #print("\nDUNE HV crate test wrapper complete.")
+    print("\nDUNE HV crate test wrapper complete.")
     return test_result
 
 

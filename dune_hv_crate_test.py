@@ -114,6 +114,8 @@ class LDOmeasure:
         else:
             self.ws.cell(row=self.row, column=1, value=self.test_name).style = "fail"
             self.datastore['overall'] = "Fail"
+            # !!!! calculate and add in pass/fail logic for fan pwm measurement
+            print(f"Fan Test Result: {self.fan_test_result}, Heat Test Result: {self.heat_test_result}, HV Test Result: {self.hv_test_result}")
         
         self.wb.save(self.path_to_spreadsheet)
 
