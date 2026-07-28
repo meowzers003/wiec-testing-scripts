@@ -230,6 +230,9 @@ class IsegMPOD:
             return abs(ramp_rate_v_per_s)
         return ramp_rate_v_per_s
 
+
+
+    # helpers to run commands
     @staticmethod
     def _target_voltage_reached(measured_voltage_v: float, target_voltage_v: float) -> bool:
         return abs(measured_voltage_v) >= abs(target_voltage_v) - 1.0
@@ -259,6 +262,14 @@ class IsegMPOD:
         raw = self._run(self._command_args("snmpget", self.cfg.read_community) + [oid])
         return self.parse_response_value(raw)
 
+    def turn_on_crate(self):
+        return self.snmpset_int("sysMainSwitch.0", 1)
+
+    def turn_off_crate(self):
+        return self.snmp_int("sysMainSwitch.0", 0)
+
+
+    # get id info 
     def get_crate_info(self, snapshot: Dict[str, str]) -> Dict[str, str]:
         required_oids = ["sysMainSwitch.0", "sysStatus.0", "outputNumber.0"]
         missing = [oid for oid in required_oids if oid not in snapshot]
@@ -386,6 +397,8 @@ class IsegMPOD:
             assignments[module_id].sort(key=lambda channel: int(channel[1:]))
         return assignments
 
+
+    # hardware alarms and communication error checks 
     def channel_health_failures(
         self,
         channels: List[str],
@@ -493,13 +506,26 @@ class IsegMPOD:
         )
         return float(value)
 
+    # RAMP RATE 
+    # set ramp UP rate 
+    def set_VoltageRiseRate(self, channel, voltageRR):
+        return self.snmpset_float(f"outputVoltageRiseRate.u{channel}", voltageRR)
+    
+    # set ramp DOWN rate 
+    def set_VoltageFallRate(self, channel, voltageRR):
+        return self.snmpset_float(f"outputVoltageFallRate.u{channel}", voltageRR)
+   
+
+    # run and record the ramp to manually calculate the ramp rate, 
+
+    # manually check the ramp rate 
     def monitor_channel_ramp(
         self,
         channel: str,
         target_voltage_v: float,
         commanded_ramp_rate_v_per_s: float,
         polarity: str = "",
-        neglect_readback_polarity: bool = False,
+        neglect_readback_polarity: bool = True,
     ) -> Tuple[bool, List[str]]:
         warnings = []
         if commanded_ramp_rate_v_per_s <= 0:
@@ -574,6 +600,14 @@ class IsegMPOD:
         )
 
         return within_tolerance, warnings
+
+    def read_outputCurrent(self, channel):
+        response = self.snmpget_value(f"outputMeasurementCurrent.u{channel}")
+        response_list = response.split()
+        return float(response_list[-2]) 
+
+    def set_outputVoltage(self, channel, voltage):
+        return self.snmpset_float(f"outputVoltage.u{channel}", voltage)
 
     def configure_and_turn_on(
         self,
