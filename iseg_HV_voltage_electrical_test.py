@@ -27,8 +27,6 @@ from iseg_pmod_wrapper import IsegMPOD, RampVerificationError, SNMPConfig
 # # GPIB board number and instrument address
 # BOARD = 0
 # ADDRESS = 9
-# ISEG_IP = "169.254.4.31"
-
 # # Open the instrument
 # dev = gpib.dev(BOARD, ADDRESS)
 
@@ -50,6 +48,7 @@ from iseg_pmod_wrapper import IsegMPOD, RampVerificationError, SNMPConfig
 mpod = None
 ip = None
 cfg = None 
+ISEG_IP = "169.254.4.31"
 
 # set up the ISEG mod 
 def setup_ISEG():
