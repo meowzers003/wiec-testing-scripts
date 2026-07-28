@@ -20,22 +20,21 @@ Refer to screenshots in recent draft and photos to know the testing scheme
 
 import time 
 from iseg_pmod_wrapper import IsegMPOD, RampVerificationError, SNMPConfig
-import matplotlib
-import numpy as np
-import gpib
-import time
+# import matplotlib
+# import numpy as np
+# import gpib
 
-# GPIB board number and instrument address
-BOARD = 0
-ADDRESS = 9
-ISEG_IP = "169.254.4.31"
+# # GPIB board number and instrument address
+# BOARD = 0
+# ADDRESS = 9
+# ISEG_IP = "169.254.4.31"
 
-# Open the instrument
-dev = gpib.dev(BOARD, ADDRESS)
+# # Open the instrument
+# dev = gpib.dev(BOARD, ADDRESS)
 
-# Identify the instrument
-gpib.write(dev, "*IDN?")
-print("Instrument:", gpib.read(dev, 256).decode().strip())
+# # Identify the instrument
+# gpib.write(dev, "*IDN?")
+# print("Instrument:", gpib.read(dev, 256).decode().strip())
 
 #  demo code 
 #  while True:
