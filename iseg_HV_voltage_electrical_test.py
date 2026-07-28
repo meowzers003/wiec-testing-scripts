@@ -92,6 +92,8 @@ def set_ISEG_voltage(voltage, channels, ramp_rate=100.0):
         # set outputvoltage
         mpod.set_outputVoltage(ch, voltage)
 
+        # turn channel on 
+        mpod.channel_on(ch)
         # wait time 15 seconds 
         time.sleep(15) 
 

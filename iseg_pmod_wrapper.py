@@ -601,6 +601,12 @@ class IsegMPOD:
 
         return within_tolerance, warnings
 
+    def channel_on(self, channel):
+        self.snmpset_int(f"outputSwitch.u{channel}", 1)
+
+    def channel_off(self, channel):
+        self.snmpset_int(f"outputSwitch.u{channel}", 0)
+
     def read_outputCurrent(self, channel):
         response = self.snmpget_value(f"outputMeasurementCurrent.u{channel}")
         response_list = response.split()
