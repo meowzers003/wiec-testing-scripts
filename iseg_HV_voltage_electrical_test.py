@@ -97,7 +97,7 @@ def set_ISEG_voltage(voltage, channels, ramp_rate=100.0):
         time.sleep(15) 
 
         # get current and store it in a list 
-        ch_current = mpod.read_outputCurrent(ch)
+        ch_current = mpod.read_outputCurrent(ch) * 1e6 # all current measurements in uA scale
         current_measurements[ch] = abs(ch_current)
 
     return current_measurements
