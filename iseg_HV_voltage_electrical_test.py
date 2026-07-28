@@ -99,10 +99,6 @@ def set_ISEG_voltage(voltage, channels, ramp_rate=100.0):
         ch_current = mpod.read_outputCurrent(ch)
         current_measurements[ch] = abs(ch_current)
 
-    print("-------------------------------------------------------------------------")
-    print(f"Current Measurements at Voltage {voltage} for Channels : {channels}")
-    print(current_measurements)
-    print("-------------------------------------------------------------------------")
     return current_measurements
 
 
@@ -132,7 +128,7 @@ if __name__ == "__main__":
     setup_ISEG()
 
     IVtest(voltages, channels=channels)
-    
+
 
 
 
