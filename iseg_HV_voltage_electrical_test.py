@@ -126,6 +126,13 @@ def IVtest(voltage_values, channels):
 
 
 
+if __name__ == "__main__":
+    channels = [200,201,202,203,204,205,206,207]
+    voltages = [50.0, 100.0, 200.0, 500.0, 1000.0, 1500.0, 2000.0]
+    setup_ISEG()
+
+    IVtest(voltages, channels=channels)
+    
 
 
 
