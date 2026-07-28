@@ -68,6 +68,7 @@ def setup_ISEG():
 
     # send command to turn it on
     response = mpod.turn_on_crate()
+    time.sleep(20) # add small delay
     # print(mpod.turn_on_crate())
     for i in range(3):
         if "on(1)" not in response:
