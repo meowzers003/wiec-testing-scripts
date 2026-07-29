@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TextIO, Tuple
 
-from iseg_pmod_wrapper import IsegMPOD, RampVerificationError, SNMPConfig
+from iseg_pmod_wrapper_QC import IsegMPOD, RampVerificationError, SNMPConfig
 
 SPREADSHEET_RESULTS_DIR = Path.cwd() / "HV Modules Test Results"
 TEXT_OUTPUT_ROOT = Path.cwd() / "HV PMOD QC Output Text Files"

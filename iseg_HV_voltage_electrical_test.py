@@ -19,10 +19,10 @@ Refer to screenshots in recent draft and photos to know the testing scheme
 #!/usr/bin/env python3
 
 import time 
-from iseg_pmod_wrapper import IsegMPOD, RampVerificationError, SNMPConfig
+from iseg_control import IsegMPOD, RampVerificationError, SNMPConfig
 # import matplotlib
 # import numpy as np
-# import gpib
+import gpib
 
 # # GPIB board number and instrument address
 # BOARD = 0
