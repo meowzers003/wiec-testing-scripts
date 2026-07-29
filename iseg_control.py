@@ -26,6 +26,7 @@ class SNMPConfig:
     mib_name: str = "+WIENER-CRATE-MIB"
     read_community: str = "public"
     write_community: str = "guru"
+    precision: str = ".9"
     version: str = "2c"
     timeout_s: int = 30
     log_commands: bool = False
@@ -83,6 +84,7 @@ class IsegMPOD:
     def _command_args(self, command: str, community: str) -> List[str]:
         args = [
             command,
+            "-Op", self.cfg.precision,
             "-v", self.cfg.version,
             "-m", self.cfg.mib_name,
             "-c", community,
@@ -142,7 +144,7 @@ class IsegMPOD:
         )
 
     def snmpget_value(self, oid: str) -> str:
-        raw = self._run(self._command_args("snmpget -Op .9", self.cfg.read_community) + [oid])
+        raw = self._run(self._command_args("snmpget", self.cfg.read_community) + [oid])
         return self.parse_response_value(raw)
 
     def turn_on_crate(self):
