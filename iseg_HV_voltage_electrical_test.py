@@ -93,8 +93,8 @@ def set_ISEG_voltage(voltage, channels, ramp_rate=100.0):
 
         # turn channel on 
         mpod.channel_on(ch)
-        # wait time 15 seconds 
-        time.sleep(15) 
+        # wait time 
+        time.sleep( (voltage // int(ramp_rate) ) + 5 ) # get measurement 5 seconds after target voltage is reached   
 
         # get current and store it in a list 
         ch_current = mpod.read_outputCurrent(ch) * 1e6 # all current measurements in uA scale
@@ -129,6 +129,8 @@ if __name__ == "__main__":
     setup_ISEG()
 
     IVtest(voltages, channels=channels)
+    for ch in channels:
+        mpod.turn_off_crate()
 
 
 
