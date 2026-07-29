@@ -151,7 +151,7 @@ class IsegMPOD:
         return self.snmpset_int("sysMainSwitch.0", 1)
 
     def turn_off_crate(self):
-        return self.snmp_int("sysMainSwitch.0", 0)
+        return self.snmpset_int("sysMainSwitch.0", 0)
 
     # RAMP RATE 
     # set ramp UP rate 
