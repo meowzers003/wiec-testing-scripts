@@ -102,7 +102,7 @@ class IsegMPOD:
                 return match.group(1).strip()
         return raw.strip()
 
-    # helpers to run commands
+    # snmp helpers to run commands
     def snmpset_float(self, oid: str, value: float) -> str:
         return self._run(
             self._command_args("snmpset", self.cfg.write_community)
@@ -119,25 +119,12 @@ class IsegMPOD:
         raw = self._run(self._command_args("snmpget", self.cfg.read_community) + [oid])
         return self.parse_response_value(raw)
 
+    # on and off controls
     def turn_on_crate(self):
         return self.snmpset_int("sysMainSwitch.0", 1)
 
     def turn_off_crate(self):
         return self.snmpset_int("sysMainSwitch.0", 0)
-
-    # RAMP RATE 
-    # set ramp UP rate 
-    def set_VoltageRiseRate(self, channel, voltageRR):
-        return self.snmpset_float(f"outputVoltageRiseRate.u{channel}", voltageRR)
-    
-    # set ramp DOWN rate 
-    def set_VoltageFallRate(self, channel, voltageRR):
-        return self.snmpset_float(f"outputVoltageFallRate.u{channel}", voltageRR)
-   
-
-    # run and record the ramp to manually calculate the ramp rate, 
-
- 
 
     def channel_on(self, channel):
         self.snmpset_int(f"outputSwitch.u{channel}", 1)
@@ -145,11 +132,30 @@ class IsegMPOD:
     def channel_off(self, channel):
         self.snmpset_int(f"outputSwitch.u{channel}", 0)
 
-    def read_outputCurrent(self, channel):
-        response = self.snmpget_value(f"outputMeasurementCurrent.u{channel}")
-        response_list = response.split()
-        return float(response_list[-2]) 
+
+    # RAMP RATE
+    # set ramp UP rate
+    def set_VoltageRiseRate(self, channel, voltageRR):
+        return self.snmpset_float(f"outputVoltageRiseRate.u{channel}", voltageRR)
+    
+    # set ramp DOWN rate
+    def set_VoltageFallRate(self, channel, voltageRR):
+        return self.snmpset_float(f"outputVoltageFallRate.u{channel}", voltageRR)
 
     def set_outputVoltage(self, channel, voltage):
         return self.snmpset_float(f"outputVoltage.u{channel}", voltage)
 
+    def set_outputCurrent(self, channel, current):
+        return self.snmpset_float(f"outputCurrent.u{channel}", current)
+
+
+    # run and record the ramp to manually calculate the ramp rate,
+    def read_outputCurrent(self, channel):
+        response = self.snmpget_value(f"outputMeasurementCurrent.u{channel}")
+        response_list = response.split()
+        return float(response_list[-2])
+
+    def read_outputVoltage(self,channel):
+        response = self.snmpget_value(f"outputMeasurementSenseVoltage.u{channel}")
+        response_list = response.split()
+        return float(response_list[-2])
