@@ -396,20 +396,43 @@ def all_channels_off(channels):
     for ch in channels:
         mpod.channel_off(ch)
 
+def shutdown():
+    global dev
+
+    if mpod is not None:
+        try:
+            mpod.turn_off_crate()
+        except Exception as exc:
+            print(f"Failed to turn off ISEG crate during shutdown: {exc}")
+
+    if dev is not None:
+        try:
+            gpib.close(dev)
+            print("GPIB connection closed.")
+        except Exception as exc:
+            print(f"Failed to close GPIB connection during shutdown: {exc}")
+        finally:
+            dev = None
+
 if __name__ == "__main__":
     channels = [200,201,202,203,204,205,206,207]
     voltages = [50.0, 100.0, 200.0, 500.0, 1000.0, 1500.0, 2000.0]
-    setup_ISEG()
+    try:
+        setup_ISEG()
 
-    # 1. IVtest
-    IVtest(voltages, channels=channels)
-    all_channels_off(channels=channels)
+        # 1. IVtest
+        IVtest(voltages, channels=channels)
+        all_channels_off(channels=channels)
 
-    # 2. DAQ Ramp Rate Test
-    RampTest(channels)
-
-    # turn everything off
-    mpod.turn_off_crate()
+        # 2. DAQ Ramp Rate Test
+        RampTest(channels)
+        
+    except KeyboardInterrupt:
+        print("\nKeyboard interrupt received; shutting down hardware connections.")
+        raise SystemExit(130)
+    finally:
+        # turn everything off and release GPIB for future tests
+        shutdown()
         
 
 
