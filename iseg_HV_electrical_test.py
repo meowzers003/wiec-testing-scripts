@@ -69,11 +69,6 @@ def setup_device():
     print("Instrument:", gpib.read(dev, 256).decode().strip())
 
 
-def ramp_rate_setup(channel, ramp_rate, voltage):
-    mpod.set_outputVoltage(channel,voltage)
-    mpod.set_VoltageRiseRate(channel, ramp_rate)
-    mpod.set_VoltageFallRate(channel, ramp_rate)
-
 def initialize_RR_folder(ramp_rate=None,voltage=None):
     global ramp_rate_results_directory
     if ramp_rate_results_directory is not None:
@@ -206,6 +201,11 @@ def _linear_ramp_fit(time_values, voltage_values):
         return 0.0, float(voltage_values[0])
     slope, intercept = np.polyfit(time_values, voltage_values, 1)
     return float(slope), float(intercept)
+
+def ramp_rate_setup(channel, ramp_rate, voltage):
+    mpod.set_outputVoltage(channel,voltage)
+    mpod.set_VoltageRiseRate(channel, ramp_rate)
+    mpod.set_VoltageFallRate(channel, ramp_rate)
 
 def ramp_config(channels, ramp_rate, voltage):
     # ensure all channels off
@@ -395,6 +395,7 @@ def IVtest(voltage_values, channels):
 def all_channels_off(channels):
     for ch in channels:
         mpod.channel_off(ch)
+        time.sleep(10)
 
 def shutdown():
     global dev
@@ -426,7 +427,7 @@ if __name__ == "__main__":
 
         # 2. DAQ Ramp Rate Test
         RampTest(channels)
-        
+
     except KeyboardInterrupt:
         print("\nKeyboard interrupt received; shutting down hardware connections.")
         raise SystemExit(130)
