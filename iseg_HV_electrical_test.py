@@ -70,7 +70,6 @@ def setup_device():
     gpib.write(dev, "*IDN?")
     print("Instrument:", gpib.read(dev, 256).decode().strip())
 
-
 def initialize_RR_folder(ramp_rate=None,voltage=None):
     global ramp_rate_results_directory
     if ramp_rate_results_directory is not None:
