@@ -92,14 +92,17 @@ def initialize_RR_folder(ramp_rate=None,voltage=None):
 
 def gpib_channel(iseg_ch):
     add = iseg_ch % 100
-    return 11+add
+    return 11+add + 100
 
 def ramp_test(mode,channel,ramp_rate,voltage):
     plot_data = {}
     mode = mode.upper()
-    ch = gpib_channel(channel) + 100
+    ch = gpib_channel(channel) 
 
     end_voltage = voltage
+    starting_voltage = abs(mpod.read_outputVoltage(channel))
+    print(f"Ch.{channel} starting voltage before ramp {mode}: {starting_voltage:.2f} V")
+
     if mode == "UP":
         mpod.channel_on(channel)
     elif mode == "DOWN":
@@ -207,10 +210,42 @@ def ramp_rate_setup(channel, ramp_rate, voltage):
     mpod.set_VoltageRiseRate(channel, ramp_rate)
     mpod.set_VoltageFallRate(channel, ramp_rate)
 
+def wait_for_channels_near_voltage(channels, target_voltage=0.0, tolerance=5.0, timeout_s=180.0):
+    start = time.time()
+    remaining = set(channels)
+
+    while remaining:
+        high_channels = {}
+        for ch in list(remaining):
+            voltage = abs(mpod.read_outputVoltage(ch))
+            if abs(voltage - target_voltage) <= tolerance:
+                remaining.remove(ch)
+            else:
+                high_channels[ch] = voltage
+
+        if not remaining:
+            return
+
+        elapsed = time.time() - start
+        if elapsed >= timeout_s:
+            for ch, voltage in sorted(high_channels.items()):
+                print(f"Ch.{ch} still at {voltage:.2f} V after {elapsed:.1f} s")
+            raise RuntimeError(
+                f"Channels did not reach {target_voltage} V within {timeout_s:.0f} s: "
+                f"{sorted(remaining)}"
+            )
+
+        print(
+            f"Waiting for channels to reach {target_voltage:.1f} V "
+            f"(+/- {tolerance:.1f} V): {sorted(remaining)}"
+        )
+        time.sleep(1)
+
 def ramp_config(channels, ramp_rate, voltage):
     # ensure all channels off
     all_channels_off(channels)
     time.sleep(10) # ramp down time after all channels off
+    wait_for_channels_near_voltage(channels)
     for ch in channels:
         ramp_rate_setup(ch,ramp_rate,voltage)
 
@@ -229,8 +264,8 @@ def RampTest(channels):
     print(" 2. Ramp Rate test")
     print("____________________________________________________________________________")
     print("----------------------------------------------------------------------------")
-    # set up gpib connection
-    setup_device()
+    # # set up gpib connection
+    # setup_device()
     print("----------------------------------------------------------------------------")
 
     # (a) ramp UP, 10 V/s, 1000 V
@@ -330,7 +365,9 @@ def setup_ISEG():
 # sets voltage for the specified iseg channel 
 def set_ISEG_voltage(voltage, channels, ramp_rate=100.0):
     current_measurements ={}
+    daq_voltage = {}
     # set the default ramp up/down rate 
+
     for ch in channels:
         # set fall rate and rise rate
         mpod.set_VoltageFallRate(ch, ramp_rate) 
@@ -347,8 +384,15 @@ def set_ISEG_voltage(voltage, channels, ramp_rate=100.0):
         # get current and store it in a list 
         ch_current = mpod.read_outputCurrent(ch) * 1e6 # all current measurements in uA scale
         current_measurements[ch] = abs(ch_current)
+        # gpib voltage
+        gch = gpib_channel(ch)
+        # get DAQ measurement
+        gpib.write(dev, "MEAS:VOLT:DC? (@%3d)"%gch)
+        result = gpib.read(dev, 256).decode().strip()
+        daq_v = float(result)        
+        daq_voltage[ch] = daq_v
 
-    return current_measurements
+    return current_measurements, daq_voltage
 
 
 def IVtest(voltage_values, channels):
@@ -361,7 +405,7 @@ def IVtest(voltage_values, channels):
     print("----------------------------------------------------------------------------")
 
     for voltage in voltage_values:
-        current_measurements = set_ISEG_voltage(voltage, channels)
+        current_measurements, daq_voltage = set_ISEG_voltage(voltage, channels)
         print(f"Current Measurements at Voltage {voltage} for Channels : {channels}")
         for ch,curr in current_measurements.items():
             iv_rows.append({
@@ -369,8 +413,9 @@ def IVtest(voltage_values, channels):
                 "iseg_channel": ch,
                 "set_voltage_V": voltage,
                 "measured_current_uA": curr,
+                "measured_DAQ_voltage": daq_voltage[ch]
             })
-            print(f"Ch. {ch}: {curr} uA")
+            print(f"Ch. {ch}: {curr} uA, DAQ voltage: {daq_voltage[ch]}")
         print("----------------------------------------------------------------------------")
 
     if iv_rows:
@@ -383,6 +428,7 @@ def IVtest(voltage_values, channels):
                 "iseg_channel",
                 "set_voltage_V",
                 "measured_current_uA",
+                "measured_DAQ_voltage"
             ],
         )
         print(f"IV test data saved to: {csv_path}")
@@ -419,6 +465,7 @@ if __name__ == "__main__":
     channels = [200,201,202,203,204,205,206,207]
     voltages = [50.0, 100.0, 200.0, 500.0, 1000.0, 1500.0, 2000.0]
     try:
+        setup_device() # gpib
         setup_ISEG()
 
         # 1. IVtest
