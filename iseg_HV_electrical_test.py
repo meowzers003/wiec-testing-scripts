@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 import time 
 from iseg_control import IsegMPOD, RampVerificationError, SNMPConfig
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import gpib
@@ -45,6 +46,7 @@ dev = None
 # --------------------- Ramp Rate Test ----------------------------------------------
 ramp_rate_results_directory = None
 RAMP_RATE_RESULTS_ROOT = Path.cwd() / "ISEG_E-Tests_RampRate"
+RAMP_SAMPLE_INTERVAL_S = 0.017
 
 def _timestamp():
     return datetime.now().strftime("%d-%m-%y_%H-%M-%S")
@@ -95,7 +97,7 @@ def gpib_channel(iseg_ch):
     return 11+add + 100
 
 def ramp_test(mode,channel,ramp_rate,voltage):
-    plot_data = {}
+    plot_data = []
     mode = mode.upper()
     ch = gpib_channel(channel) 
 
@@ -111,25 +113,31 @@ def ramp_test(mode,channel,ramp_rate,voltage):
     else:
         raise ValueError(f"Unsupported ramp mode: {mode}")
 
+    time.sleep(0.5)
     start = time.time()
-
-    voltage_read = abs(mpod.read_outputVoltage(channel))
-    while round(voltage_read) != end_voltage: # did not reach the end of ramping
-        time.sleep(0.5)
-
+    next_sample_time = start
+    while True:
         # get DAQ measurement
         gpib.write(dev, "MEAS:VOLT:DC? (@%3d)"%ch)
         result = gpib.read(dev, 256).decode().strip()
         voltage_point = float(result)
-        time_point = time.time() - start
+        sample_time = datetime.now()
+        time_point = time.time() - start 
 
         # store data
-        plot_data[time_point] = voltage_point
+        plot_data.append((sample_time, time_point, voltage_point))
 
         voltage_read = abs(mpod.read_outputVoltage(channel))
+        if round(voltage_read) == end_voltage:
+            break
+
+        next_sample_time += RAMP_SAMPLE_INTERVAL_S
+        sleep_time = next_sample_time - time.time()
+        if sleep_time > 0:
+            time.sleep(sleep_time)
 
     # make the plot and store it in ramp_rate_results_directory
-    # x-axis "time (seconds)", y-axis "voltage (Volts)"
+    # x-axis "timestamp", y-axis "voltage (Volts)"
     # title each plot "CH {channel}/{ch} - {ramp_rate} V/s Ramp {mode} with {voltage} V"
     # each plot will also have a linear line of best fit in order to find the ramp rate
     # calculated DAQ ramp rate will be displayed on the plot image
@@ -140,8 +148,9 @@ def ramp_test(mode,channel,ramp_rate,voltage):
         print(f"Ch.{channel} Ramp Rate {ramp_rate} Test, {voltage} V : FAIL")
         return None, []
 
-    time_values = np.array(list(plot_data.keys()), dtype=float)
-    voltage_values = np.array(list(plot_data.values()), dtype=float)
+    timestamp_values = [point[0] for point in plot_data]
+    time_values = np.array([point[1] for point in plot_data], dtype=float)
+    voltage_values = np.array([point[2] for point in plot_data], dtype=float)
 
     if mode == "DOWN":
         fit_values = voltage - voltage_values
@@ -154,7 +163,12 @@ def ramp_test(mode,channel,ramp_rate,voltage):
 
     daq_ramp_rate = abs(slope)
     ramp_rows = []
-    for time_point, voltage_point, fit_point in zip(time_values, voltage_values, best_fit_voltage_values):
+    for timestamp, time_point, voltage_point, fit_point in zip(
+        timestamp_values,
+        time_values,
+        voltage_values,
+        best_fit_voltage_values,
+    ):
         ramp_rows.append({
             "test_type": "RampTest",
             "mode": mode,
@@ -162,6 +176,7 @@ def ramp_test(mode,channel,ramp_rate,voltage):
             "gpib_channel": ch,
             "set_ramp_rate_V_per_s": ramp_rate,
             "target_voltage_V": voltage,
+            "sample_timestamp": timestamp.isoformat(timespec="milliseconds"),
             "elapsed_time_s": float(time_point),
             "daq_voltage_V": float(voltage_point),
             "best_fit_voltage_V": float(fit_point),
@@ -169,11 +184,13 @@ def ramp_test(mode,channel,ramp_rate,voltage):
         })
 
     fig, ax = plt.subplots(figsize=(10, 6), dpi=120)
-    ax.plot(time_values, voltage_values, "o", label="DAQ voltage")
-    ax.plot(time_values, best_fit_voltage_values, "-", label=f"Best fit: {daq_ramp_rate:.2f} V/s")
-    ax.set_xlabel("time (seconds)")
+    ax.plot(timestamp_values, voltage_values, "o", label="DAQ voltage")
+    ax.plot(timestamp_values, best_fit_voltage_values, "-", label=f"Best fit: {daq_ramp_rate:.2f} V/s")
+    ax.set_xlabel("timestamp")
     ax.set_ylabel("voltage (Volts)")
     ax.set_title(f"CH {channel}/{ch} - {ramp_rate} V/s Ramp {mode} with {voltage} V")
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S.%f"))
+    fig.autofmt_xdate()
     ax.grid(True)
     ax.legend()
     ax.text(
@@ -312,6 +329,7 @@ def RampTest(channels):
                 "gpib_channel",
                 "set_ramp_rate_V_per_s",
                 "target_voltage_V",
+                "sample_timestamp",
                 "elapsed_time_s",
                 "daq_voltage_V",
                 "best_fit_voltage_V",
