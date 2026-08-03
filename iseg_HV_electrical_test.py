@@ -51,6 +51,7 @@ ramp_rate_results_directory = None
 RAMP_RATE_RESULTS_ROOT = Path.cwd() / "ISEG_E-Tests_RampRate"
 RAMP_SAMPLE_INTERVAL_S = 0.017
 RAMP_COMPLETION_TOLERANCE_V = 1.0
+RAMP_TOP_HOLD_S = 2.0
 STOP_MESSAGE = None
 
 def _timestamp():
@@ -236,53 +237,120 @@ def _drain_ramp_errors(error_queue):
         except queue.Empty:
             return errors
 
-def _plot_channel_ramp(mode, channel, ramp_rate, voltage, channel_samples):
+def _daq_ramp_rate_10_to_90(time_values, voltage_values, direction):
+    if len(time_values) < 2:
+        return 0.0, np.array([], dtype=bool), np.zeros_like(voltage_values)
+
+    voltage_min = float(np.min(voltage_values))
+    voltage_max = float(np.max(voltage_values))
+    voltage_span = voltage_max - voltage_min
+    if voltage_span == 0:
+        return 0.0, np.array([], dtype=bool), np.full_like(voltage_values, voltage_min)
+
+    low_mark = voltage_min + 0.10 * voltage_span
+    high_mark = voltage_min + 0.90 * voltage_span
+    mask = (voltage_values >= low_mark) & (voltage_values <= high_mark)
+
+    if np.count_nonzero(mask) < 2:
+        mask = np.ones_like(voltage_values, dtype=bool)
+
+    if direction == "DOWN":
+        fit_values = voltage_max - voltage_values
+    else:
+        fit_values = voltage_values
+
+    slope, intercept = _linear_ramp_fit(time_values[mask], fit_values[mask])
+    if direction == "DOWN":
+        best_fit_voltage_values = voltage_max - (slope * time_values + intercept)
+    else:
+        best_fit_voltage_values = slope * time_values + intercept
+
+    return abs(slope), mask, best_fit_voltage_values
+
+def _plot_channel_ramp_cycle(channel, ramp_rate, voltage, channel_samples):
     ch = gpib_channel(channel)
     if not channel_samples:
         print(f"Ch.{channel} Ramp Rate {ramp_rate} Test, {voltage} V : FAIL")
         return None, []
 
-    timestamp_values = [point["sample_timestamp"] for point in channel_samples]
-    time_values = np.array([point["elapsed_time_s"] for point in channel_samples], dtype=float)
-    voltage_values = np.array([point["daq_voltage_V"] for point in channel_samples], dtype=float)
+    up_samples = [point for point in channel_samples if point["mode"] == "UP"]
+    hold_samples = [point for point in channel_samples if point["mode"] == "HOLD"]
+    down_samples = [point for point in channel_samples if point["mode"] == "DOWN"]
+    if not up_samples or not down_samples:
+        print(f"Ch.{channel} Ramp Rate {ramp_rate} Test, {voltage} V : FAIL")
+        return None, []
 
-    if mode == "DOWN":
-        fit_values = voltage - voltage_values
-        slope, intercept = _linear_ramp_fit(time_values, fit_values)
-        best_fit_voltage_values = voltage - (slope * time_values + intercept)
-    else:
-        fit_values = voltage_values
-        slope, intercept = _linear_ramp_fit(time_values, fit_values)
-        best_fit_voltage_values = slope * time_values + intercept
+    up_timestamps = [point["sample_timestamp"] for point in up_samples]
+    up_time_values = np.array([point["elapsed_time_s"] for point in up_samples], dtype=float)
+    up_voltage_values = np.array([point["daq_voltage_V"] for point in up_samples], dtype=float)
+    up_ramp_rate, up_fit_mask, up_fit_values = _daq_ramp_rate_10_to_90(
+        up_time_values,
+        up_voltage_values,
+        "UP",
+    )
 
-    daq_ramp_rate = abs(slope)
+    down_timestamps = [point["sample_timestamp"] for point in down_samples]
+    down_time_values = np.array([point["elapsed_time_s"] for point in down_samples], dtype=float)
+    down_voltage_values = np.array([point["daq_voltage_V"] for point in down_samples], dtype=float)
+    down_ramp_rate, down_fit_mask, down_fit_values = _daq_ramp_rate_10_to_90(
+        down_time_values,
+        down_voltage_values,
+        "DOWN",
+    )
+
     ramp_rows = []
-    for timestamp, time_point, voltage_point, fit_point in zip(
-        timestamp_values,
-        time_values,
-        voltage_values,
-        best_fit_voltage_values,
+    for mode, samples, fit_values, fit_mask, calculated_rate in (
+        ("UP", up_samples, up_fit_values, up_fit_mask, up_ramp_rate),
+        ("DOWN", down_samples, down_fit_values, down_fit_mask, down_ramp_rate),
     ):
+        for sample, fit_point, used_for_fit in zip(samples, fit_values, fit_mask):
+            ramp_rows.append({
+                "test_type": "RampTest",
+                "mode": mode,
+                "iseg_channel": channel,
+                "gpib_channel": ch,
+                "set_ramp_rate_V_per_s": ramp_rate,
+                "target_voltage_V": voltage,
+                "sample_timestamp": sample["sample_timestamp"].isoformat(timespec="milliseconds"),
+                "elapsed_time_s": float(sample["elapsed_time_s"]),
+                "daq_voltage_V": float(sample["daq_voltage_V"]),
+                "best_fit_voltage_V": float(fit_point),
+                "used_for_10_to_90_fit": bool(used_for_fit),
+                "calculated_ramp_up_rate_V_per_s": up_ramp_rate,
+                "calculated_ramp_down_rate_V_per_s": down_ramp_rate,
+            })
+
+    for sample in hold_samples:
         ramp_rows.append({
             "test_type": "RampTest",
-            "mode": mode,
+            "mode": "HOLD",
             "iseg_channel": channel,
             "gpib_channel": ch,
             "set_ramp_rate_V_per_s": ramp_rate,
             "target_voltage_V": voltage,
-            "sample_timestamp": timestamp.isoformat(timespec="milliseconds"),
-            "elapsed_time_s": float(time_point),
-            "daq_voltage_V": float(voltage_point),
-            "best_fit_voltage_V": float(fit_point),
-            "calculated_ramp_rate_V_per_s": daq_ramp_rate,
+            "sample_timestamp": sample["sample_timestamp"].isoformat(timespec="milliseconds"),
+            "elapsed_time_s": float(sample["elapsed_time_s"]),
+            "daq_voltage_V": float(sample["daq_voltage_V"]),
+            "best_fit_voltage_V": "",
+            "used_for_10_to_90_fit": False,
+            "calculated_ramp_up_rate_V_per_s": up_ramp_rate,
+            "calculated_ramp_down_rate_V_per_s": down_ramp_rate,
         })
 
+    ramp_rows.sort(key=lambda row: row["elapsed_time_s"])
+
     fig, ax = plt.subplots(figsize=(10, 6), dpi=120)
-    ax.plot(timestamp_values, voltage_values, "o", label="DAQ voltage")
-    ax.plot(timestamp_values, best_fit_voltage_values, "-", label=f"Best fit: {daq_ramp_rate:.2f} V/s")
+    ax.plot(up_timestamps, up_voltage_values, "o", label="Ramp up DAQ voltage")
+    ax.plot(up_timestamps, up_fit_values, "-", label=f"10-90% up fit: {up_ramp_rate:.2f} V/s")
+    if hold_samples:
+        hold_timestamps = [point["sample_timestamp"] for point in hold_samples]
+        hold_voltage_values = [point["daq_voltage_V"] for point in hold_samples]
+        ax.plot(hold_timestamps, hold_voltage_values, "o", color="gray", label="2 s hold")
+    ax.plot(down_timestamps, down_voltage_values, "o", label="Ramp down DAQ voltage")
+    ax.plot(down_timestamps, down_fit_values, "-", label=f"10-90% down fit: {down_ramp_rate:.2f} V/s")
     ax.set_xlabel("timestamp")
     ax.set_ylabel("voltage (Volts)")
-    ax.set_title(f"CH {channel}/{ch} - {ramp_rate} V/s Ramp {mode} with {voltage} V")
+    ax.set_title(f"CH {channel}/{ch} - {ramp_rate} V/s Ramp UP/DOWN with {voltage} V")
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S.%f"))
     fig.autofmt_xdate()
     ax.grid(True)
@@ -290,7 +358,8 @@ def _plot_channel_ramp(mode, channel, ramp_rate, voltage, channel_samples):
     ax.text(
         0.02,
         0.95,
-        f"Calculated DAQ ramp rate: {daq_ramp_rate:.2f} V/s",
+        f"10-90% ramp up: {up_ramp_rate:.2f} V/s\n"
+        f"10-90% ramp down: {down_ramp_rate:.2f} V/s",
         transform=ax.transAxes,
         va="top",
         bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.85},
@@ -300,7 +369,7 @@ def _plot_channel_ramp(mode, channel, ramp_rate, voltage, channel_samples):
     safe_voltage = str(voltage).replace(".", "p")
     plot_path = (
         Path(ramp_rate_results_directory)
-        / f"CH_{channel}_{ch}_{safe_ramp_rate}Vps_ramp_{mode}_{safe_voltage}V.png"
+        / f"CH_{channel}_{ch}_{safe_ramp_rate}Vps_ramp_UP_DOWN_{safe_voltage}V.png"
     )
     fig.savefig(plot_path, bbox_inches="tight")
     plt.close(fig)
@@ -308,14 +377,31 @@ def _plot_channel_ramp(mode, channel, ramp_rate, voltage, channel_samples):
     print(f"Ch.{channel} Ramp Rate {ramp_rate} Test, {voltage} V : COMPLETE")
     return plot_path, ramp_rows
 
-def run_ramp(mode,channels,ramp_rate,voltage):
-    mode = mode.upper()
+def _append_available_ramp_samples(data_queue, samples_by_channel, mode):
+    while True:
+        try:
+            item = data_queue.get_nowait()
+        except queue.Empty:
+            break
+
+        if item is STOP_MESSAGE:
+            continue
+
+        for channel in samples_by_channel:
+            samples_by_channel[channel].append({
+                "mode": mode,
+                "sample_timestamp": item["sample_timestamp"],
+                "elapsed_time_s": item["elapsed_time_s"],
+                "daq_voltage_V": item["voltages"][channel],
+            })
+
+def run_ramp_cycle(channels,ramp_rate,voltage):
     if ramp_rate_results_directory is None:
         initialize_RR_folder(ramp_rate, voltage)
 
     for channel in channels:
         starting_voltage = abs(mpod.read_outputVoltage(channel))
-        print(f"Ch.{channel} starting voltage before ramp {mode}: {starting_voltage:.2f} V")
+        print(f"Ch.{channel} starting voltage before ramp cycle: {starting_voltage:.2f} V")
 
     context = mp.get_context("spawn")
     data_queue = context.Queue()
@@ -346,27 +432,39 @@ def run_ramp(mode,channels,ramp_rate,voltage):
         if not ready_event.wait(timeout=30):
             raise RuntimeError("Ramp acquisition process did not become ready.")
 
-        if mode == "UP":
-            for channel in channels:
-                mpod.channel_on(channel)
-            end_voltage = voltage
-        elif mode == "DOWN":
-            for channel in channels:
-                mpod.channel_off(channel)
-            end_voltage = 0.0
-        else:
-            raise ValueError(f"Unsupported ramp mode: {mode}")
+        for channel in channels:
+            mpod.channel_on(channel)
 
         time.sleep(0.5)
         run_event.set()
 
-        while not _channels_reached_voltage(channels, end_voltage):
+        while not _channels_reached_voltage(channels, voltage):
             for error in _drain_ramp_errors(error_queue):
                 raise RuntimeError(
                     "Ramp acquisition process failed:\n"
                     f"{error['message']}\n{error['traceback']}"
                 )
+            _append_available_ramp_samples(data_queue, samples_by_channel, "UP")
             time.sleep(0.1)
+
+        _append_available_ramp_samples(data_queue, samples_by_channel, "UP")
+        print(f"Holding at {voltage} V for {RAMP_TOP_HOLD_S:.1f} s before ramping down.")
+        time.sleep(RAMP_TOP_HOLD_S)
+        _append_available_ramp_samples(data_queue, samples_by_channel, "HOLD")
+
+        for channel in channels:
+            mpod.channel_off(channel)
+
+        while not _channels_reached_voltage(channels, 0.0):
+            for error in _drain_ramp_errors(error_queue):
+                raise RuntimeError(
+                    "Ramp acquisition process failed:\n"
+                    f"{error['message']}\n{error['traceback']}"
+                )
+            _append_available_ramp_samples(data_queue, samples_by_channel, "DOWN")
+            time.sleep(0.1)
+
+        _append_available_ramp_samples(data_queue, samples_by_channel, "DOWN")
 
     finally:
         stop_event.set()
@@ -388,6 +486,7 @@ def run_ramp(mode,channels,ramp_rate,voltage):
 
             for channel in channels:
                 samples_by_channel[channel].append({
+                    "mode": "DOWN",
                     "sample_timestamp": item["sample_timestamp"],
                     "elapsed_time_s": item["elapsed_time_s"],
                     "daq_voltage_V": item["voltages"][channel],
@@ -403,8 +502,7 @@ def run_ramp(mode,channels,ramp_rate,voltage):
     error_queue.close()
 
     for channel in channels:
-        plot_path, channel_rows = _plot_channel_ramp(
-            mode,
+        plot_path, channel_rows = _plot_channel_ramp_cycle(
             channel,
             ramp_rate,
             voltage,
@@ -426,37 +524,23 @@ def RampTest(channels):
     # setup_device()
     print("----------------------------------------------------------------------------")
 
-    # (a) ramp UP, 10 V/s, 1000 V
+    # (a) ramp UP/DOWN, 10 V/s, 1000 V
     initialize_RR_folder(10.0, 1000.0)
     ramp_config(channels, 10.0, 1000.0)
     print("----------------------------------------------------------------------------")
 
-    print("Test : ramp UP, 10 V/s, 1000 V => in progress")
-    ramp_rows.extend(run_ramp("UP",channels,10.0,1000.0))
-    print("Test : ramp UP, 10 V/s, 1000 V => DONE")
+    print("Test : ramp UP/DOWN, 10 V/s, 1000 V => in progress")
+    ramp_rows.extend(run_ramp_cycle(channels,10.0,1000.0))
+    print("Test : ramp UP/DOWN, 10 V/s, 1000 V => DONE")
 
     print("----------------------------------------------------------------------------")
 
-    print("Test : ramp DOWN, 10 V/s, 1000 V => in progress")
-    # (b) ramp DOWN, 10 V/s, 1000 V
-    ramp_rows.extend(run_ramp("DOWN",channels,10.0,1000.0))
-    print("Test : ramp DOWN, 10 V/s, 1000 V => DONE")
-
-    print("----------------------------------------------------------------------------")
-
-    print("Test : ramp UP, 100 V/s, 1000 V => in progress")
-    # (c) ramp UP, 100 V/s, 1000 V
+    print("Test : ramp UP/DOWN, 100 V/s, 1000 V => in progress")
+    # (b) ramp UP/DOWN, 100 V/s, 1000 V
     initialize_RR_folder(100.0, 1000.0)
     ramp_config(channels, 100.0, 1000.0)
-    ramp_rows.extend(run_ramp("UP",channels,100.0,1000.0))
-    print("Test : ramp UP, 100 V/s, 1000 V => DONE")
-
-    print("----------------------------------------------------------------------------")
-
-    print("Test : ramp DOWN, 100 V/s, 1000 V => in progress")
-    # (d) ramp DOWN, 100 V/s, 1000 V
-    ramp_rows.extend(run_ramp("DOWN",channels,100.0,1000.0))
-    print("Test : ramp DOWN, 100 V/s, 1000 V => DONE")
+    ramp_rows.extend(run_ramp_cycle(channels,100.0,1000.0))
+    print("Test : ramp UP/DOWN, 100 V/s, 1000 V => DONE")
 
     if ramp_rows:
         csv_path = _csv_path("RampTests")
@@ -474,7 +558,9 @@ def RampTest(channels):
                 "elapsed_time_s",
                 "daq_voltage_V",
                 "best_fit_voltage_V",
-                "calculated_ramp_rate_V_per_s",
+                "used_for_10_to_90_fit",
+                "calculated_ramp_up_rate_V_per_s",
+                "calculated_ramp_down_rate_V_per_s",
             ],
         )
         print(f"Ramp test data saved to: {csv_path}")
